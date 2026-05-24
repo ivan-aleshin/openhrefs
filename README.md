@@ -48,8 +48,11 @@ the full specification.]
 
 A Parquet dataset of domain-level authority metrics computed by openhrefs
 over the **global** CommonCrawl link graph (no scope restrictions on
-input). Contains the metrics — `open_authority`, `open_volume`, and the
-domain identifier — for every domain reachable from CommonCrawl.
+input). Published columns: `domain`, `open_authority`, `open_volume`,
+`window_id` — for every domain reachable from CommonCrawl. This is a
+subset of the canonical `mart_domain_authority` (see `SPEC.md` §11);
+extra fields like `pagerank_score` and `authority_ratio` remain
+available to users who run the pipeline themselves.
 
 This is the lightweight alternative to running the pipeline yourself. If
 you need authority scores for an arbitrary set of domains but do not need
