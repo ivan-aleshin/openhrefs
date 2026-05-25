@@ -1,0 +1,37 @@
+# openhrefs pipeline configuration (committed defaults).
+#
+# Scope, crawl window, and language targets. Developer-specific overrides go in
+# config.local.yml (local-only); credentials and the active environment go in
+# .env. Storage paths live in config/storage.yml. See SPEC.md §3 (scope) and
+# §4 (crawl window).
+
+# Scope selects which domains flow into the URL-level stages and link marts.
+# Authority metrics (Stage 2 PageRank, Stage 3 open_authority) are computed on
+# the full global host graph BEFORE scope is applied — scope never filters
+# their input (SPEC.md §3, "Filter application order").
+#
+# Grammar: two-level all_of / any_of. all_of = AND, any_of = OR; nesting is
+# arbitrary. The min_* thresholds always apply via AND regardless of grouping.
+scope:
+  all_of:
+    - language: [bul, ron]     # ISO 639-3 codes; all TLDs (no tld restriction)
+    - tld_class: [normal]      # gov / edu / normal
+    - min_referring_domains: 2 # authority threshold (post-Stage-2 filter)
+    - min_crawls_active: 1     # crawls in window where the domain must appear
+
+# Per-domain thresholds and handling. Defaults match SPEC.md §3; values here
+# document the defaults explicitly even where they equal the built-in default.
+scope_params:
+  min_language_share: 0.25     # min share of target-language pages on a domain
+  min_crawls_language: 2       # crawls where the language share must hold
+  subdomain_handling: root_only # root_only / include / aggregate
+
+# Sliding scoring window plus permanent historical anchors (SPEC.md §4).
+crawl_window:
+  recent_count: 6              # rolling window of most recent crawls
+  historical_anchors: true     # retain one anchor per 6-month period
+
+# Languages the pipeline classifies and reports. Derived from scope.language
+# but listed explicitly so language outputs are stable if scope narrows.
+languages:
+  targets: [bul, ron]

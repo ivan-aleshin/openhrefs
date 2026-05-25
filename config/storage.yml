@@ -1,0 +1,34 @@
+# Storage paths per environment. The active environment is chosen by the
+# OPENHREFS_ENV variable (default: local). The RAW_PATH and MARTS_PATH
+# environment variables, if set, override the active environment's raw_path
+# and marts_path — the pipeline's two canonical output locations.
+#
+# Canonical storage is Parquet at every layer (SPEC.md §9). CommonCrawl source
+# paths point at the public mirrors; the GCP reference deployment uses the GCS
+# mirror to avoid cross-cloud egress. Spark's Hadoop FS layer handles the
+# protocol, so business logic stays vendor-neutral.
+
+# Local development and CI. Defaults read fixtures and write under build/, so
+# `make check` and dbt --target local work with no cloud credentials.
+local:
+  raw_path: tests/fixtures/parquet
+  marts_path: build/marts
+  host_graph_path: https://data.commoncrawl.org/projects/hyperlinkgraph
+  cdx_path: https://index.commoncrawl.org
+  wat_path: https://data.commoncrawl.org/crawl-data
+
+# GCP reference deployment (Dataproc Serverless + GCS).
+gcp:
+  raw_path: gs://openhrefs-data/raw
+  marts_path: gs://openhrefs-data/marts
+  host_graph_path: gs://commoncrawl/projects/hyperlinkgraph
+  cdx_path: gs://commoncrawl/cc-index/collections
+  wat_path: gs://commoncrawl/crawl-data
+
+# AWS drop-in (EMR/Glue + S3).
+aws:
+  raw_path: s3://openhrefs-data/raw
+  marts_path: s3://openhrefs-data/marts
+  host_graph_path: s3://commoncrawl/projects/hyperlinkgraph
+  cdx_path: s3://commoncrawl/cc-index/collections
+  wat_path: s3://commoncrawl/crawl-data

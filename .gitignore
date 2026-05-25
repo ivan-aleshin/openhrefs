@@ -45,11 +45,13 @@ dbt/.user.yml
 .ipynb_checkpoints/
 *.ipynb_checkpoints
 
-# Data — pipeline outputs and local fixtures larger than fixtures intended for VCS
+# Data — pipeline outputs; never commit raw/marts data.
 data/
 *.parquet
 *.crc
 _SUCCESS
+# Exception: tiny committed Parquet fixtures for dbt --target local / CI.
+!tests/fixtures/parquet/**/*.parquet
 
 # Spark
 spark-warehouse/
