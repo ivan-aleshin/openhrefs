@@ -1,0 +1,15 @@
+openhrefs:
+  target: local
+  outputs:
+    local:
+      type: duckdb
+      path: ":memory:"
+      threads: 4
+      extensions:
+        - parquet
+    prod:
+      type: spark
+      method: session  # reuses an active SparkSession; invoke via local pyspark or dbt-spark entrypoint
+      host: localhost   # not used by session method; required by dbt-spark credential validation
+      schema: "{{ env_var('SPARK_SCHEMA', 'openhrefs') }}"
+      threads: 4
