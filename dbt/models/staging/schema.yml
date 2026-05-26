@@ -1,0 +1,28 @@
+version: 2
+
+models:
+  - name: stg_cc_domain_authority
+    description: "Per-domain open_authority and open_volume from Stage 3 (SPEC §5)."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - domain
+              - crawl
+    columns:
+      - name: domain
+        description: Root domain.
+        tests:
+          - not_null
+      - name: crawl
+        description: CC crawl ID.
+        tests:
+          - not_null
+      - name: open_authority
+        description: "Personalized PageRank score (0–1)."
+        tests:
+          - not_null
+      - name: open_volume
+        description: Log-scaled in-degree.
+        tests:
+          - not_null
