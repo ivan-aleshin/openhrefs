@@ -11,6 +11,9 @@ snapshot-paths: ["snapshots"]
 target-path: "target"
 clean-targets: ["target", "dbt_packages"]
 
+on-run-start:
+  - "{{ register_spark_sources() }}"
+
 models:
   openhrefs:
     staging:

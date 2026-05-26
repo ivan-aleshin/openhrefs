@@ -1,0 +1,35 @@
+version: 2
+
+sources:
+  - name: raw_cc
+    description: "Spark job outputs — Parquet files at RAW_PATH."
+    tables:
+      - name: cc_domain_authority
+        description: "Stage 3 output — per-domain open_authority and open_volume (SPEC §5)."
+        meta:
+          external_location: "read_parquet('{{ env_var(\"RAW_PATH\", \"../tests/fixtures/parquet\") }}/cc_domain_authority/*.parquet')"
+        columns:
+          - name: domain
+            description: Root domain.
+          - name: crawl
+            description: CC crawl ID (e.g. CC-MAIN-2025-51).
+          - name: open_authority
+            description: "Personalized PageRank score (0–1)."
+          - name: open_volume
+            description: Log-scaled in-degree.
+
+      - name: cc_domain_pagerank
+        description: "Stage 2 output — per-domain PageRank and in/out degree (SPEC §5)."
+        meta:
+          external_location: "read_parquet('{{ env_var(\"RAW_PATH\", \"../tests/fixtures/parquet\") }}/cc_domain_pagerank/*.parquet')"
+        columns:
+          - name: domain
+            description: Root domain.
+          - name: crawl
+            description: CC crawl ID.
+          - name: pagerank_score
+            description: "PageRank score from global power-iteration (SPEC §5 Stage 2)."
+          - name: in_degree
+            description: Number of inbound links.
+          - name: out_degree
+            description: Number of outbound links.
