@@ -1,0 +1,33 @@
+name: dbt prod sample
+
+'on':
+  workflow_dispatch:
+  pull_request:
+    types: [labeled]
+
+jobs:
+  dbt-build-prod:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.label.name == 'needs-prod-validation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: dbt/dbt_packages
+          key: dbt-packages-${{ hashFiles('dbt/package-lock.yml') }}
+      - run: uv sync --frozen
+      - run: cd dbt && uv run dbt deps --quiet
+      - name: dbt build prod
+        env:
+          RAW_PATH: ${{ github.workspace }}/tests/fixtures/parquet
+        run: cd dbt && uv run dbt build --target prod

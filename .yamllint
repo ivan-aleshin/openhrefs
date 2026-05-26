@@ -1,0 +1,8 @@
+extends: relaxed
+ignore: |
+  .venv/
+  dbt/dbt_packages/
+  dbt/target/
+  dbt/logs/
+rules:
+  line-length: disable
