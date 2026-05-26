@@ -1,4 +1,4 @@
-.PHONY: check lint format fix typecheck sql dbt-parse test
+.PHONY: check lint format fix typecheck sql dbt-parse dbt-build-local test
 
 # Single gate before committing: lint + type-check + sql + dbt parse + tests.
 # Steps over not-yet-created directories (spark_jobs/, dbt/) skip cleanly so
@@ -31,10 +31,13 @@ sql:
 
 dbt-parse:
 	@if [ -d dbt ]; then \
-		cd dbt && uv run dbt parse --target local && uv run dbt parse --target prod; \
+		cd dbt && uv run dbt deps --quiet && uv run dbt parse --target local && uv run dbt parse --target prod; \
 	else \
 		echo "skip dbt parse: no dbt/ yet"; \
 	fi
+
+dbt-build-local:
+	cd dbt && uv run dbt deps && uv run dbt build --target local
 
 test:
 	@if find tests -name 'test_*.py' 2>/dev/null | grep -q .; then \
