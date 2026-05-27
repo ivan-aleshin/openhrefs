@@ -37,6 +37,7 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "N"]
+ignore = ["N812"]  # pyspark convention: `from pyspark.sql import functions as F`
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N802", "N803", "N806"]

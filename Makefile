@@ -1,4 +1,4 @@
-.PHONY: check lint format fix typecheck sql dbt-parse dbt-build-local test
+.PHONY: check lint format fix typecheck sql dbt-parse dbt-build-local test run-spark
 
 # Single gate before committing: lint + type-check + sql + dbt parse + tests.
 # Steps over not-yet-created directories (spark_jobs/, dbt/) skip cleanly so
@@ -38,6 +38,12 @@ dbt-parse:
 
 dbt-build-local:
 	cd dbt && uv run dbt deps && uv run dbt build --target local
+
+# Run a Spark job locally. PYTHONPATH=. is required because spark_jobs/ is not
+# installed as a package (package=false in pyproject.toml).
+# Usage: make run-spark JOB=spark_jobs/hello/main.py ARGS="--cdx-path /tmp/sample.gz"
+run-spark:
+	PYTHONPATH=. uv run python $(JOB) $(ARGS)
 
 test:
 	@if find tests -name 'test_*.py' 2>/dev/null | grep -q .; then \

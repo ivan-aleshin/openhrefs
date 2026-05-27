@@ -1,0 +1,104 @@
+name: CI
+
+'on':
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: dbt/dbt_packages
+          key: dbt-packages-${{ hashFiles('dbt/package-lock.yml') }}
+      - run: uv sync --frozen
+      - run: cd dbt && uv run dbt deps --quiet
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run sqlfluff lint dbt/models/
+      - run: uv run yamllint .
+
+  type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - run: uv sync --frozen
+      - run: |
+          if [ -d spark_jobs ]; then
+            uv run mypy spark_jobs/
+          else
+            echo "skip: no spark_jobs/"
+          fi
+
+  dbt-parse-local:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: dbt/dbt_packages
+          key: dbt-packages-${{ hashFiles('dbt/package-lock.yml') }}
+      - run: uv sync --frozen
+      - run: cd dbt && uv run dbt deps --quiet
+      - run: cd dbt && uv run dbt parse --target local
+
+  dbt-parse-prod:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: dbt/dbt_packages
+          key: dbt-packages-${{ hashFiles('dbt/package-lock.yml') }}
+      - run: uv sync --frozen
+      - run: cd dbt && uv run dbt deps --quiet
+      - run: cd dbt && uv run dbt parse --target prod
+
+  dbt-build-local:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - uses: actions/cache@v4
+        with:
+          path: dbt/dbt_packages
+          key: dbt-packages-${{ hashFiles('dbt/package-lock.yml') }}
+      - run: uv sync --frozen
+      - run: make dbt-build-local
+
+  pyspark-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: "17"
+          distribution: temurin
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - run: uv sync --frozen
+      - run: uv run pytest tests/
