@@ -1,10 +1,12 @@
 """Hello-world Dataproc job: read one CDX file and print row count.
 
-Validates that Dataproc Serverless can reach gs://commoncrawl and
+Validates that Dataproc Serverless can read a CDX shard from GCS and
 that the job submission pipeline works end-to-end.
 
-Expected data volume: ~100 MB compressed per CDX shard (~3-4 M rows).
-Last measured Dataproc Serverless cost: TBD — record after first run.
+Expected data volume: ~630 MB compressed per CDX shard (~9 M rows).
+Last measured Dataproc Serverless cost: ~$0.013 per run (CC-MAIN-2024-51
+cdx-00000.gz, 9,237,013 rows; 0.20 DCU-hours + 0.03 GB-month shuffle,
+us-central1, 2026-05-27).
 """
 
 import argparse
