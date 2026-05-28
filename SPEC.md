@@ -41,7 +41,7 @@ The reference GCP deployment uses the GCS mirror (`gs://commoncrawl/...`) to avo
 | `language` | list[str] | null | ISO 639-3 codes, e.g. `[ita, spa, jpn]` |
 | `tld` | list[str] | null | TLDs without dot, e.g. `[com, it, es]` |
 | `tld_class` | list[str] | null | `gov` / `edu` / `normal` |
-| `min_language_share` | float | **0.30** | Minimum share of target language pages on domain (0.0–1.0) |
+| `min_language_share` | float | **0.25** | Minimum share of target language pages on domain (0.0–1.0) |
 | `min_referring_domains` | int | 0 | Authority threshold — exclude low-signal domains |
 | `min_pagerank` | float | 0.0 | Minimum PageRank score |
 | `min_crawls_active` | int | 1 | Crawls in window where domain must appear |
@@ -165,7 +165,7 @@ All Spark jobs run on **Dataproc Serverless** — no cluster management, resourc
 
 ### Stage 1 — Language Classification
 
-A domain is included in the target segment when the share of target-language pages meets or exceeds `min_language_share` (default **0.30**) in at least `min_crawls_language` crawls. This excludes bilingual domains where the target language is secondary.
+A domain is included in the target segment when the share of target-language pages meets or exceeds `min_language_share` (default **0.25**) in at least `min_crawls_language` crawls. This excludes bilingual domains where the target language is secondary.
 
 Language field format per domain:
 ```json
@@ -208,7 +208,7 @@ OA(v) = (1 - d) * w_norm(v) + d * Σ_u [ OA(u) / OutDeg(u) ]
 ```
 where `w_norm(v) = 0` for non-seed domains. Optimal `d` and seed-set size N determined by Experiment 4 (see Section 8).
 
-**open_volume** (analogous to Majestic Citation Flow): log-scaled in-degree, reflecting link quantity independent of quality.
+**open_volume**: log-scaled in-degree, reflecting link quantity independent of quality.
 
 Output: Parquet at `<RAW_PATH>/cc_domain_authority/` — schema `(domain STRING, crawl STRING, open_authority DOUBLE, open_volume DOUBLE)`. Partitioning: `crawl`.
 
@@ -417,7 +417,7 @@ All experiments run on minimal data slices to validate assumptions and calibrate
 
 ### Experiment 4 — open_authority Seed Sensitivity
 **Data:** Full Host Graph, single crawl
-**Validates:** Optimal seed-set size (test: top-1K, top-5K, top-10K, top-50K); optimal weight formula (`1/log2(rank+1)` vs `1/sqrt(rank)` vs uniform); optimal damping factor; correlation with Majestic TF on publicly available Majestic Million data.
+**Validates:** Optimal seed-set size (test: top-1K, top-5K, top-10K, top-50K); optimal weight formula (`1/log2(rank+1)` vs `1/sqrt(rank)` vs uniform); optimal damping factor; correlation with a publicly available reference domain ranking.
 
 ### Experiment 5 — WAT Extraction
 **Data:** 10–20 WAT segments for a small language target
