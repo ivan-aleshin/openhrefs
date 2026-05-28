@@ -16,10 +16,17 @@ Present:
 - `validate.py` — **local** metric profile (RBO, Kendall τ-b, bucketed Spearman, top-k
   Jaccard, divergence) over an overlap parquet. Runs on the laptop, not Dataproc
   (scipy/numpy native extensions don't package into Serverless `--py-files`).
-
-Deferred — next step (Task 3, Spark jobs on Dataproc):
-- `host_to_domain.py` — host ranks → domain ranks (sum + apex) via PSL, for V1/V2.
-- `join_opr.py` — join our domain ranks with OpenPageRank top-10M → overlap parquet
+- `graph_io.py` — shared Spark IO: vertices→domain map (PSL) and edges.
+- `host_to_domain.py` — host ranks → domain ranks (pr_sum, pr_apex, n_hosts) via PSL, for V1/V2.
+- `filter_edges.py` — V2: drop intra-domain host edges (keep cross-domain links only).
+- `collapse_to_domain.py` — V3: collapse host graph → domain graph (drop self-loops),
+  dense domain ids + id→domain map.
+- `join_opr.py` — join a variant's domain ranks with OpenPageRank top-10M → overlap parquet
   (the input `validate.py` consumes).
-- V3: collapse host edges → domain graph (drop self-loops) → PageRank.
-- V2: drop intra-domain edges → PageRank warm-started from V1 (`--resume-from`).
+
+The PageRank runs themselves reuse exp2's `analyze.py` (`--pagerank-only`, `--ranks-out`,
+`--resume-from` for V2 warm-start).
+
+Deferred — next step: stage the OpenPageRank CSV to GCS, run the graph jobs + PageRank
+variants on Dataproc, run `validate.py` locally, and record the V1/V2/V3-vs-OPR profile +
+the host/domain divergence finding here.

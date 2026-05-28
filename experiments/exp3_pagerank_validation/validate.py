@@ -2,10 +2,9 @@
 
 Runs **locally** (laptop), not on Dataproc: scipy/numpy have native extensions
 and don't package cleanly into Serverless `--py-files` (see engineering_notes
-2026-05-26). The graph-scale join (our 150M+ domains ⋈ OPR top-10M) will be produced
-by `join_opr.py` — a Spark job on Dataproc, not yet written (deferred, see README) —
-which writes a small overlap parquet (≤10M rows); this script reads that overlap
-parquet with pandas and computes the metrics.
+2026-05-26). The graph-scale join (our 150M+ domains ⋈ OPR top-10M) is produced by
+`join_opr.py` (a Spark job on Dataproc), which writes a small overlap parquet (≤10M
+rows); this script reads that overlap parquet with pandas and computes the metrics.
 
 Overlap parquet schema: `domain` (str), `our_pr` (float), `opr_score` (float),
 optionally `n_hosts` (int) for the divergence-vs-subdomain-count analysis.
