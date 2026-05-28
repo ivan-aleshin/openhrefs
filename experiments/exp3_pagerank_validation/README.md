@@ -25,8 +25,16 @@ Present:
   (the input `validate.py` consumes).
 
 The PageRank runs themselves reuse exp2's `analyze.py` (`--pagerank-only`, `--ranks-out`,
-`--resume-from` for V2 warm-start).
+`--resume-from` for V2 warm-start). `_smoke_psl.py` is a cheap packaging check.
 
-Deferred — next step: stage the OpenPageRank CSV to GCS, run the graph jobs + PageRank
-variants on Dataproc, run `validate.py` locally, and record the V1/V2/V3-vs-OPR profile +
+## Progress
+
+Done:
+- All jobs written; OpenPageRank top-10M staged to `gs://openhrefs-data/raw/refs/openpagerank/`
+  (note: OPR rows are *hosts*, e.g. `www.facebook.com` — normalized to registered domain by
+  the same PSL, then max per domain).
+- Dataproc packaging validated by `_smoke_psl.py`: `tldextract` + its PSL snapshot load from the
+  `--py-files` zip on executors; multi-level TLDs map correctly (`uk.co.bbc.foo`→`bbc.co.uk`).
+
+Pending: run V1/V2/V3 on Dataproc, `validate.py` locally, record the V1/V2/V3-vs-OPR profile +
 the host/domain divergence finding here.
