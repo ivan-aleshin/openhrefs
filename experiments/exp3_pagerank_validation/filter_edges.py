@@ -9,7 +9,7 @@ Output is a host-level edge set with internal links removed; PageRank then runs 
 
 import argparse
 
-from graph_io import read_edges, read_id_domain
+from graph_io import read_edges, read_map
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
@@ -18,7 +18,7 @@ def main(argv: list[str] | None = None) -> None:
     """Entrypoint."""
     parser = argparse.ArgumentParser(description="Exp 3 — V2 edge filter (drop intra-domain).")
     parser.add_argument("--edges", required=True, help="host edges (parquet or tsv).")
-    parser.add_argument("--vertices", required=True, help="vertices (id, reversed-host).")
+    parser.add_argument("--id-domain", required=True, help="precomputed map (id, domain, is_apex).")
     parser.add_argument(
         "--out", required=True, help="filtered host edges parquet (from_id, to_id)."
     )
@@ -27,7 +27,7 @@ def main(argv: list[str] | None = None) -> None:
     spark = SparkSession.builder.appName("exp3-filter-edges").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     try:
-        idmap = read_id_domain(spark, args.vertices).select("id", "domain")
+        idmap = read_map(spark, args.id_domain).select("id", "domain")
         edges = read_edges(spark, args.edges)
         fd = idmap.withColumnRenamed("id", "from_id").withColumnRenamed("domain", "from_domain")
         td = idmap.withColumnRenamed("id", "to_id").withColumnRenamed("domain", "to_domain")

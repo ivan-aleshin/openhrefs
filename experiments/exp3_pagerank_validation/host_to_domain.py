@@ -8,7 +8,7 @@ OpenPageRank comparison. V3 ranks are already domain-level (see collapse_to_doma
 
 import argparse
 
-from graph_io import read_id_domain
+from graph_io import read_map
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
@@ -17,14 +17,14 @@ def main(argv: list[str] | None = None) -> None:
     """Entrypoint."""
     parser = argparse.ArgumentParser(description="Exp 3 — host ranks -> domain ranks.")
     parser.add_argument("--ranks", required=True, help="parquet (id, rank) host ranks.")
-    parser.add_argument("--vertices", required=True, help="vertices (id, reversed-host).")
+    parser.add_argument("--id-domain", required=True, help="precomputed map (id, domain, is_apex).")
     parser.add_argument("--out", required=True, help="parquet (domain, pr_sum, pr_apex, n_hosts).")
     args = parser.parse_args(argv)
 
     spark = SparkSession.builder.appName("exp3-host-to-domain").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
     try:
-        idmap = read_id_domain(spark, args.vertices)
+        idmap = read_map(spark, args.id_domain)
         ranks = spark.read.parquet(args.ranks).select(
             "id", F.col("rank").cast("double").alias("rank")
         )
