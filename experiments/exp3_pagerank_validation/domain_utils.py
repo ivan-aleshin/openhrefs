@@ -24,8 +24,11 @@ RESERVED_SUFFIXES = {"local", "localhost", "internal", "test"}
 
 @lru_cache(maxsize=1)
 def _extractor() -> tldextract.TLDExtract:
-    """Reproducible PSL extractor that does not fetch live updates."""
-    return tldextract.TLDExtract(suffix_list_urls=None, fallback_to_snapshot=True)
+    """Reproducible PSL extractor — offline snapshot, writable cache dir."""
+    # cache_dir under /tmp avoids failures on read-only home dirs (executors / CI)
+    return tldextract.TLDExtract(
+        suffix_list_urls=None, fallback_to_snapshot=True, cache_dir="/tmp/tldextract"
+    )
 
 
 def unreverse_host(reversed_host: str) -> str:
