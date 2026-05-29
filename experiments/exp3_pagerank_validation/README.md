@@ -4,7 +4,6 @@ Gates Track A. Two outputs: (1) validate the PageRank engine against OpenPageRan
 (2) measure the host-vs-domain / internal-link effect across three graph
 constructions (V1 host-internal, V2 host-external, V3 domain-collapsed) to choose
 the Stage 2 construction consciously. OpenPageRank is a reference, not ground truth.
-Full design: PLAN.md / DESIGN.md "Конструкция PageRank".
 
 Stacked on `experiment/host-graph-pagerank` — reuses exp2's `analyze.py` PageRank loop.
 

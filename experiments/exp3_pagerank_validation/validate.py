@@ -1,8 +1,7 @@
 """Exp 3 — metric profile for a PageRank variant vs OpenPageRank.
 
 Runs **locally** (laptop), not on Dataproc: scipy/numpy have native extensions
-and don't package cleanly into Serverless `--py-files` (see engineering_notes
-2026-05-26). The graph-scale join (our 150M+ domains ⋈ OPR top-10M) is produced by
+and don't package cleanly into Serverless `--py-files`. The graph-scale join (our 150M+ domains ⋈ OPR top-10M) is produced by
 `join_opr.py` (a Spark job on Dataproc), which writes a small overlap parquet (≤10M
 rows); this script reads that overlap parquet with pandas and computes the metrics.
 
