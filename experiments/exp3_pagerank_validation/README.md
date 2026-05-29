@@ -8,7 +8,7 @@ Full design: PLAN.md / DESIGN.md "Конструкция PageRank".
 
 Stacked on `experiment/host-graph-pagerank` — reuses exp2's `analyze.py` PageRank loop.
 
-## Status: scaffold (in progress)
+## Status: completed — gate passed (V2 intentionally skipped)
 
 Present:
 - `domain_utils.py` — PSL host→registered-domain (vendored from composite-domain-rating;

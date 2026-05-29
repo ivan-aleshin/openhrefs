@@ -93,7 +93,7 @@ def compute_metrics(df: pd.DataFrame, rbo_p: float, rbo_depth: int, kendall_samp
     print(f"  p90 |Δrank|:    {np.percentile(delta, 90):,.0f}")
     if "n_hosts" in df.columns:
         c = stats.spearmanr(df["our_rank"] - df["opr_rank"], df["n_hosts"]).statistic
-        print(f"  Spearman(Δrank, hosts/domain): {c:.4f}  (>0 ⇒ multi-host domains over-ranked)")
+        print(f"  Spearman(Δrank, hosts/domain): {c:.4f}  (<0 ⇒ multi-host domains over-ranked)")
 
     print("\n=== Our top-20 domains (eyeball) ===")
     for _, row in df.nsmallest(20, "our_rank").iterrows():
