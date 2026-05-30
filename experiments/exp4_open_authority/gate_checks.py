@@ -9,6 +9,7 @@ Three checks whose numbers drive ACCEPT / REJECT / AMBIGUOUS (see the gate doc):
 Submit with `--py-files=<exp4 domain_utils.py>,<exp3 pydeps zip>` — it imports `registered_domain`
 → `tldextract` at module load.
 """
+
 import argparse
 
 from domain_utils import registered_domain
@@ -19,8 +20,18 @@ from pyspark.sql import types as T
 _reg = F.udf(registered_domain, T.StringType())
 
 _CANARIES = (
-    "blogspot.com", "wordpress.com", "github.io", "pages.dev", "netlify.app", "wixsite.com",
-    "weebly.com", "webflow.io", "herokuapp.com", "vercel.app", "appspot.com", "firebaseapp.com",
+    "blogspot.com",
+    "wordpress.com",
+    "github.io",
+    "pages.dev",
+    "netlify.app",
+    "wixsite.com",
+    "weebly.com",
+    "webflow.io",
+    "herokuapp.com",
+    "vercel.app",
+    "appspot.com",
+    "firebaseapp.com",
     "readthedocs.io",
 )
 
@@ -33,6 +44,11 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--seed-domain-col", default="registered_domain")
     p.add_argument("--seed-score-col", default="consensus_score")
     p.add_argument("--seed-size", type=int, default=10_000)
+    p.add_argument(
+        "--boundary-only",
+        action="store_true",
+        help="run only the boundary check + examples (cheap re-run for inspection)",
+    )
     a = p.parse_args(argv)
     spark = SparkSession.builder.appName("exp4.0-gate-checks").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
@@ -50,7 +66,14 @@ def main(argv: list[str] | None = None) -> None:
         print(f"=== BOUNDARY: sample={n:,} null={nulls:,} mismatch={m:,} rate={rate:.4%} ===")
         print("=== top mismatch reg-clusters (large count => platform/private-PSL split) ===")
         mism.groupBy("reg").count().orderBy(F.desc("count")).show(20, False)
+        print("=== mismatch examples (domain -> reg) ===")
+        mism.select("domain", "reg").show(50, False)
+        print("=== null examples (registered_domain -> None) ===")
+        chk.where(F.col("reg").isNull()).select("domain").show(50, False)
         chk.unpersist()
+
+        if a.boundary_only:
+            return
 
         # --- Platform canaries (expect self=1, sub_nodes ~ 0) ---
         print("=== CANARIES ===")
@@ -62,9 +85,12 @@ def main(argv: list[str] | None = None) -> None:
         # --- Seed coverage (optional) ---
         if a.seed_csv:
             seed = (
-                spark.read.option("header", True).csv(a.seed_csv)
-                .select(F.col(a.seed_domain_col).alias("domain"),
-                        F.col(a.seed_score_col).cast("double").alias("score"))
+                spark.read.option("header", True)
+                .csv(a.seed_csv)
+                .select(
+                    F.col(a.seed_domain_col).alias("domain"),
+                    F.col(a.seed_score_col).cast("double").alias("score"),
+                )
                 .where(F.col("score").isNotNull())
                 .orderBy(F.col("score").desc(), F.col("domain").asc())
                 .limit(a.seed_size)
@@ -72,8 +98,10 @@ def main(argv: list[str] | None = None) -> None:
             seed_n = seed.count()
             covered = seed.join(vmap.select("domain"), "domain").count()
             cov = covered / seed_n if seed_n else 0.0
-            print(f"=== SEED COVERAGE: top-{a.seed_size} "
-                  f"covered={covered:,}/{seed_n:,} = {cov:.2%} ===")
+            print(
+                f"=== SEED COVERAGE: top-{a.seed_size} "
+                f"covered={covered:,}/{seed_n:,} = {cov:.2%} ==="
+            )
     finally:
         spark.stop()
 

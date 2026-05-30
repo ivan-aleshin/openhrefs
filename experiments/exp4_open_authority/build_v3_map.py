@@ -5,6 +5,7 @@ e.g. `com.example`). CC already aggregated host→PLD via PSL, so the vertex *is
 domain — we only un-reverse it. The PLD-vs-our-tldextract boundary is validated separately by the
 Exp 4.0 gate (`gate_checks`); this script just materializes the map and reports id density.
 """
+
 import argparse
 
 from pyspark.sql import DataFrame, SparkSession
