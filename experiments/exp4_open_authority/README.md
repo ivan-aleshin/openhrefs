@@ -55,5 +55,20 @@ to confirm the adopted graph runs end-to-end and converges before building the P
 **Cost:** convert + global PR ≈ **$1.9** (PR ≈ 28.8 DCU-hr × $0.06 ≈ $1.73 + shuffle ≈ $0.16),
 under the ~$4.3 estimate — the 869-part split parallelised the read well.
 
-**Verdict:** the adopted V3 graph runs end-to-end and the PageRank engine converges on it with mass
-conservation → 4.1 closed; next is the personalized-teleport (PPR) engine in 4.2.
+**Edge-orientation gate** (batch `exp41-orient-20260531-042211`, `orientation_check.py`): convergence
++ mass = 1.0 don't prove `from_id`/`to_id` were read in the link direction, so check the top of the
+ranking. Top-100 by global PageRank is the textbook shape of a correctly-oriented web graph —
+`googleapis.com`, `google.com`, `facebook.com`, `googletagmanager.com`, `instagram.com`,
+`cloudflare.com`, `gstatic.com`, `youtube.com`, … A swapped graph would surface outbound-heavy
+domains (link aggregators / spam farms), not link *targets*. **Orientation correct** ⇒ `pagerank_score`
+and the downstream PPR chain are valid.
+
+Note: the top is dominated by ubiquitous infrastructure (CDN / analytics / widget domains embedded on
+millions of pages via `<script>`/CDN references), i.e. global PageRank measures *ubiquity*, not
+editorial authority. This is exactly why `open_authority` is **personalized** PageRank toward the
+curated composite-DR seed — the teleport vector pulls mass to editorially-trusted domains instead of
+`googleapis`/`gstatic`. The orientation result reinforces the PPR design (relevant to 4.2/4.3).
+
+**Verdict:** the adopted V3 graph runs end-to-end, the PageRank engine converges with mass
+conservation, and edge orientation is confirmed → 4.1 closed; next is the personalized-teleport (PPR)
+engine in 4.2.
