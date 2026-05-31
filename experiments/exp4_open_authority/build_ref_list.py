@@ -1,9 +1,9 @@
-"""Exp 4.4 — stratified domain list for the trust-flow export.
+"""Exp 4.4 — stratified domain list for the trust reference export.
 
-Samples domains ACROSS the pilot `open_authority` distribution so the trust-flow validation isn't
+Samples domains ACROSS the pilot `open_authority` distribution so the reference validation isn't
 head-only: the top-`head` by OA is always kept, plus a per-`log10(OA)`-bucket Bernoulli sample so
 the long tail can't swamp the head, capped at `--max-domains` (the export-budget guard). One
-registered domain per line → handed to the user for the targeted trust-flow (TF/CF) export.
+registered domain per line → handed to the user for the targeted trust reference export.
 
 The stratification logic (`stratified_ref_list`) is a pure transform; `main` is I/O only.
 """

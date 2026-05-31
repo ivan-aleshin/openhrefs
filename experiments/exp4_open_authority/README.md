@@ -97,8 +97,9 @@ dominate the head at `d=0.85` with a seed that already contains the popular set.
 
 **Verdict:** the seed→PPR chain works and produces a sane, mass-conserving personalized ranking; raw OA
 resembles global PR at the head. Whether that's a defect is a 4.4 question, not a head-shape judgment:
-the trust-flow reference (TF) — itself a seeded trust-propagation, the same family as personalized PR —
-also ranks `googleapis`/`cloudflare` high, so OA tracking them may be *correct*. The right validation is **OA vs TF**
-(both seeded trust) and **global PR vs CF** (both volume), measured across the distribution. Only if that
-correlation is weak do the calibration levers apply (lower damping, seed cleaning — the parking/boilerplate
-demotion is already visible — or the OA-minus-global delta). 4.4 builds the reference and measures it.
+the trust reference (`ref_trust`) — itself a seeded trust-propagation, the same family as personalized
+PR — also ranks `googleapis`/`cloudflare` high, so OA tracking them may be *correct*. The right
+validation is **OA vs `ref_trust`** (both seeded trust) and **global PR vs `ref_volume`** (both volume),
+measured across the distribution. Only if that correlation is weak do the calibration levers apply
+(lower damping, seed cleaning — the parking/boilerplate demotion is already visible — or the
+OA-minus-global delta). 4.4 builds the reference and measures it.

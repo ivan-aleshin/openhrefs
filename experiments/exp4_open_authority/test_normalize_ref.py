@@ -16,24 +16,39 @@ def spark():
     s.stop()
 
 
-def test_normalize_ref_dedupes_subdomains_to_registered_max_tf(spark):
+_COLS = ["host", "trust", "volume", "status", "rd", "eb"]
+_KW = dict(status_col="status", refdomains_col="rd", extbacklinks_col="eb")
+
+
+def test_normalize_ref_dedupes_to_registered_domain_maxes_numerics_and_best_status(spark):
     rows = [
-        ("www.example.com", "50.0", "40.0"),
-        ("blog.example.com", "70.0", "30.0"),
-        ("other.org", "10.0", "5.0"),
+        ("www.example.com", "50.0", "40.0", "Found", "100", "1000"),
+        ("blog.example.com", "70.0", "30.0", "MayExist", "200", "2000"),
+        ("other.org", "10.0", "5.0", "Found", "3", "30"),
     ]
-    df = spark.createDataFrame(rows, ["host", "tf", "cf"])
+    df = spark.createDataFrame(rows, _COLS)
     out = {
-        r["domain"]: (r["tf"], r["cf"])
-        for r in normalize_ref_domains(df, "host", "tf", "cf").collect()
+        r["domain"]: r
+        for r in normalize_ref_domains(df, "host", "trust", "volume", **_KW).collect()
     }
-    assert out["example.com"] == (70.0, 40.0)  # tf/cf maxed per registered domain
-    assert out["other.org"] == (10.0, 5.0)
+    ex = out["example.com"]
+    assert (ex["ref_trust"], ex["ref_volume"]) == (70.0, 40.0)  # maxed independently per domain
+    assert ex["ref_domains"] == 200 and ex["ext_backlinks"] == 2000
+    assert ex["status"] == "Found"  # Found outranks MayExist in the priority agg
+    assert out["other.org"]["ref_trust"] == 10.0
 
 
-def test_normalize_ref_drops_null_or_noncastable_tf(spark):
-    # non-castable tf casts to null; tf drives the gate, a null would poison Spearman → drop it
-    rows = [("a.com", "n/a", "1.0"), ("b.com", "55.0", "2.0")]
-    df = spark.createDataFrame(rows, ["host", "tf", "cf"])
-    out = {r["domain"] for r in normalize_ref_domains(df, "host", "tf", "cf").collect()}
-    assert out == {"b.com"}
+def test_normalize_ref_keeps_zero_trust_but_drops_null(spark):
+    # found-but-zero-trust must survive (a primary result); a non-castable trust → null → dropped
+    rows = [
+        ("a.com", "n/a", "1.0", "MayExist", "0", "0"),
+        ("b.com", "0", "2.0", "NotFound", "0", "0"),
+        ("c.com", "55.0", "3.0", "Found", "5", "9"),
+    ]
+    df = spark.createDataFrame(rows, _COLS)
+    out = {
+        r["domain"]: r
+        for r in normalize_ref_domains(df, "host", "trust", "volume", **_KW).collect()
+    }
+    assert set(out) == {"b.com", "c.com"}  # a.com (null trust) dropped; b.com (zero) kept
+    assert out["b.com"]["ref_trust"] == 0.0 and out["b.com"]["status"] == "NotFound"
