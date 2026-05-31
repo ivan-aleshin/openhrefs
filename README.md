@@ -11,10 +11,10 @@ index. A free public dataset of global domain-level metrics is published as
 a lightweight alternative for users who only need authority scores and don't
 want to run the pipeline themselves.
 
-> **Status:** Phase 0 — initial setup. Active development. No working
-> pipeline yet. The technical specification ([SPEC.md](SPEC.md)) defines
-> the intended system; implementation will follow phase by phase. Sections
-> below will be expanded as features land.
+> **Status:** Phase 1 — validation experiments. Active development. No
+> working pipeline yet. The technical specification ([SPEC.md](SPEC.md))
+> defines the intended system; implementation will follow phase by phase.
+> Sections below will be expanded as features land.
 
 ---
 
@@ -62,7 +62,8 @@ Releases.
 
 Publication cadence to be determined — depends on actual compute cost per
 refresh and demonstrated interest from consumers. The first publication
-will follow Phase 4 completion.
+will follow Phase 3 completion (the authority pipeline and its mart),
+ahead of the link-intelligence work.
 
 ### Planned: mart samples
 
@@ -74,8 +75,11 @@ infrastructure.
 
 ### Pipeline phases
 
-Phase 0 (setup) → Phase 1 (validation experiments) → Phase 2 (Spark
-stages) → Phase 3 (dbt layer) → Phase 4 (publication and observability).
+Phase 0 (setup) → Phase 1 (validation experiments) → Phase 2 (authority
+pipeline: PageRank + open_authority) → Phase 3 (authority mart + first
+public dataset) → Phase 4 (link-intelligence marts) → Phase 5
+(orchestration + full multi-window index). The free public dataset lands
+at Phase 3, roughly halfway, ahead of the heavier link-intelligence work.
 Sections of this README will be filled in as each phase lands working
 artifacts.
 
