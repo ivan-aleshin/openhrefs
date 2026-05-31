@@ -96,7 +96,9 @@ drop out of the head entirely). So the teleport *does* pull mass toward the seed
 dominate the head at `d=0.85` with a seed that already contains the popular set.
 
 **Verdict:** the seed→PPR chain works and produces a sane, mass-conserving personalized ranking; raw OA
-gives weak separation at the head. Levers for stronger separation (4.4/4.5): lower damping, seed
-cleaning (the parking/boilerplate demotion is already visible — cleaning would sharpen it), and
-analyzing the OA-minus-global delta rather than the absolute head. 4.4 quantifies this against a
-trust-flow reference.
+resembles global PR at the head. Whether that's a defect is a 4.4 question, not a head-shape judgment:
+the trust-flow reference (TF) — itself a seeded trust-propagation, the same family as personalized PR —
+also ranks `googleapis`/`cloudflare` high, so OA tracking them may be *correct*. The right validation is **OA vs TF**
+(both seeded trust) and **global PR vs CF** (both volume), measured across the distribution. Only if that
+correlation is weak do the calibration levers apply (lower damping, seed cleaning — the parking/boilerplate
+demotion is already visible — or the OA-minus-global delta). 4.4 builds the reference and measures it.
