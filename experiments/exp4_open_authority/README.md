@@ -35,3 +35,25 @@ this crawl; our own `collapse_to_domain.py` path (Exp 3) stays the validated fal
 the CC domain graph is a faithful V3 realization for this crawl → **ACCEPT**.
 
 **Cost:** v3_map build + gate checks ≈ negligible (< $1 — vertices only, no edges, no PageRank).
+
+## Exp 4.1 — edges + global V3 PageRank (2026-05-30): **DONE**
+
+Staged the domain edges and ran an unpersonalized (uniform-teleport) PageRank over the full V3 graph
+to confirm the adopted graph runs end-to-end and converges before building the PPR engine (4.2).
+
+- **Edges staged** on a transient GCE VM (CloudFront read + in-region GCS write = free; only VM
+  uptime billed): the single 15.4 GiB domain-edges gzip is non-splittable, so `stage_edges.sh` splits
+  it into 869 `edges_part_*.txt.gz` (~5M edges each) for parallel Spark reads → `_STAGED`; VM deleted.
+  Single-threaded `gzip` dominated (~40 min); future runs could use `pigz`.
+- **Convert** (batch `exp41-convert-20260530-224934`): gzip parts → Parquet at
+  `gs://…/tmp/exp4/v3_edges_parquet` (157 files, `_SUCCESS`), so downstream reads are splittable.
+- **Global PageRank** (batch `exp41-globalpr-20260530-230833`, `--n-vertices 118760321 --tol 0.001
+  --max-iter 30`): **converged at iteration 10** (`L1 delta 7.55e-04 < 0.001`), monotone;
+  **final total mass = 1.000000** (no dangling-mass leak). Output `gs://…/tmp/exp4/v3_ranks/`
+  (`_SUCCESS`, 2000 files), wall-time ≈ 56 min.
+
+**Cost:** convert + global PR ≈ **$1.9** (PR ≈ 28.8 DCU-hr × $0.06 ≈ $1.73 + shuffle ≈ $0.16),
+under the ~$4.3 estimate — the 869-part split parallelised the read well.
+
+**Verdict:** the adopted V3 graph runs end-to-end and the PageRank engine converges on it with mass
+conservation → 4.1 closed; next is the personalized-teleport (PPR) engine in 4.2.
