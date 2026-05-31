@@ -72,3 +72,31 @@ curated composite-DR seed — the teleport vector pulls mass to editorially-trus
 **Verdict:** the adopted V3 graph runs end-to-end, the PageRank engine converges with mass
 conservation, and edge orientation is confirmed → 4.1 closed; next is the personalized-teleport (PPR)
 engine in 4.2.
+
+## Exp 4.3 — raw seed teleport vector + PPR pilot (2026-05-31): **DONE**
+
+First personalized-PageRank run on a real seed, to confirm the seed→teleport→PPR chain works and to
+read what raw `open_authority` looks like before any seed cleaning or calibration.
+
+- **Seed vector** (`build_seed_vector.py`, batch `exp43-seedvec-20260531-055056`): top-10K consensus
+  domains, `log_rank` weight → mapped onto v3_map. `seed_n=10,000 mapped_n=9,940 mapped_ratio=99.40%`
+  (the 60 unmapped are off-graph, matching the 4.0 gate's seed coverage) → normalized teleport `(id, w)`.
+- **PPR** (`analyze.py --teleport`, batch `exp43-oapr-20260531-055709`): **converged at iteration 8**
+  (`L1 delta 7.4e-04 < 0.001`, faster than the global PR's iter 10 — a concentrated teleport converges
+  quicker), **final mass = 1.000000**, ~47 min, ≈**$1.5** (23.4 DCU-hr). Output
+  `gs://…/tmp/exp4/pilot/oa_ranks_raw_top10k_logrank`.
+
+**Top-N reading (`orientation_check.py` on the OA ranks).** Raw top-10K/`log_rank` at `d=0.85`
+resembles the global PR head — `googleapis`/`gstatic`/`cloudflare`/`jsdelivr` stay high because 85 % of
+the mass still follows links and the top-10K seed *overlaps* the already-popular set. But the
+personalization is visible in the relative moves: editorial/seed domains rise (`google.com` #2→#1,
+`wikipedia.org` #42→#22) while non-editorial domains are demoted (`gmpg.org`, a WordPress-header
+boilerplate domain, #9→#17; the parking/registrar domains `godaddy.com`/`afternic.com`/`hugedomains.com`
+drop out of the head entirely). So the teleport *does* pull mass toward the seed — it just doesn't
+dominate the head at `d=0.85` with a seed that already contains the popular set.
+
+**Verdict:** the seed→PPR chain works and produces a sane, mass-conserving personalized ranking; raw OA
+gives weak separation at the head. Levers for stronger separation (4.4/4.5): lower damping, seed
+cleaning (the parking/boilerplate demotion is already visible — cleaning would sharpen it), and
+analyzing the OA-minus-global delta rather than the absolute head. 4.4 quantifies this against a
+trust-flow reference.
