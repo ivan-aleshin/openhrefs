@@ -183,9 +183,10 @@ def pagerank(
 def _build_teleport(nodes: DataFrame, teleport: DataFrame, n: int) -> DataFrame:
     """Validate the teleport vector and broadcast it onto all N nodes (off-seed w=0).
 
-    Rejects vectors that would silently break mass conservation: negative weights,
-    duplicate ids, a sum != 1, or ids outside [0, n) (these survive the sum check but
-    get dropped by the node join, leaking mass). All checks come from one aggregate
+    Rejects vectors that would silently break mass conservation: null/NaN weights (a NaN
+    slips through `sum`/comparison since `nan > 1e-6` is False; a null is dropped by `sum`),
+    negative weights, duplicate ids, a sum != 1, or ids outside [0, n) (these survive the sum
+    check but get dropped by the node join, leaking mass). All checks come from one aggregate
     over the (small) teleport vector — no scan/join against the N-node set.
     """
     t = teleport.select(F.col("id"), F.col("w").cast("double"))
@@ -196,7 +197,10 @@ def _build_teleport(nodes: DataFrame, teleport: DataFrame, n: int) -> DataFrame:
         F.countDistinct("id").alias("d"),
         F.min("id").alias("id_min"),
         F.max("id").alias("id_max"),
+        F.sum(F.when(F.col("w").isNull() | F.isnan("w"), 1).otherwise(0)).alias("bad"),
     ).first()
+    if chk["bad"]:
+        raise ValueError(f"teleport vector has null/NaN weights ({chk['bad']} rows)")
     if chk["mn"] is not None and chk["mn"] < 0:
         raise ValueError(f"teleport vector has negative weight (min={chk['mn']})")
     if chk["c"] != chk["d"]:

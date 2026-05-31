@@ -59,6 +59,15 @@ def test_out_of_range_teleport_id_rejected(spark):
         analyze.pagerank(edges, teleport=teleport, return_ranks=True, **_PR_KW)
 
 
+def test_nan_teleport_weight_rejected(spark):
+    # a NaN weight slips through sum/min comparisons (nan > 1e-6 is False) and would corrupt
+    # the rank vector — reject it explicitly before any spend.
+    edges = spark.createDataFrame(_CYCLE, ["from_id", "to_id"])
+    teleport = spark.createDataFrame([(0, float("nan")), (1, 1.0)], ["id", "w"])
+    with pytest.raises(ValueError, match="null/NaN"):
+        analyze.pagerank(edges, teleport=teleport, return_ranks=True, **_PR_KW)
+
+
 def test_invalid_damping_rejected(spark):
     edges = spark.createDataFrame(_CYCLE, ["from_id", "to_id"])
     with pytest.raises(ValueError, match="damping"):
