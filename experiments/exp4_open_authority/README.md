@@ -167,3 +167,100 @@ option only if a later need to sharpen the head appears.
 Caveat: the panel is OA-stratified by construction, so the metrics are conditional on that panel (even
 OA coverage across buckets), not the natural domain distribution — which is the right validation set
 (uniform OA coverage strengthens the separation read rather than inflating it).
+
+## Exp 4.5 — head-sharpening probes (2026-06-02): **raw OA accepted, no calibration applied**
+
+4.4 passed, but the OA head is dominated by ubiquitous infra/CDN (`googleapis`, `gstatic`,
+`cloudflare`, `jsdelivr`, …). 4.5 asked whether an **automated** lever sharpens the head (demote
+ubiquity, surface editorial) at acceptable cost. Manual seed curation is out of scope — automated
+methods only. Three levers, all read against the d=0.85 raw-seed pilot:
+
+- **Damping sweep** (`exp45-oapr-d075-…`, d=0.75; d=0.90 skipped). Trust metrics invariant
+  (AUC 0.937 vs 0.938, Spearman 0.770 vs 0.769; decile curves identical) and head **Jaccard 0.969**
+  vs d=0.85 — the top-20 is the same infra set, only cosmetic swaps. **Damping is not a head lever**:
+  it's a global teleport/flow knob, blind to good-vs-bad nodes. Mid-tail even degrades slightly (lower
+  d demotes editorial carried by link structure, promotes seed-proximity noise).
+- **In-degree-fraction boilerplate detector** (`detect_boilerplate.py`, `exp45-boilerplate-…`,
+  threshold 0.05 → **10 flagged**: `googleapis`, `facebook`, `google`, `instagram`, `googletagmanager`,
+  `youtube`, `gmpg.org`, `gstatic`, `twitter`, `linkedin`). Output-denylist probe: **too blunt on both
+  axes** — precision (removes `youtube`/`linkedin`/`facebook` — genuine authorities) and recall (leaves
+  `cloudflare`/`jsdelivr`/`amazonaws`/`cloudfront` below threshold; the post-denylist head is still
+  CDN/ad-tech). In-degree fraction can't separate "embedded by templates" from "genuinely popular
+  destination" — both saturate. **Rejected.**
+- **OA−global lift** (`delta_probe.py`, `exp45-deltaprobe-…`, `lift = log(oa_score / global_score)` on
+  the OA top-100k). Raw lift correctly sinks infra to the bottom (oa≈global → lift≈0) but is
+  denominator-unstable — low-support spam (`global≈0`) explodes the ratio and floods the head. **Gated
+  to the OA top-1000 then sorted by lift**, the head becomes genuinely editorial (`miraheze`, `wowhead`,
+  `thesun.co.uk`, `msnbc`, `tesla`, `proton.me`, `abcnews`, …) with infra gone. This is a real,
+  automated, output-side lever — `lift` is essentially trust-over-ubiquity (OA↔TF, global↔CF; lift ≈
+  TF/CF). The hard floor is crude (top-2000 readmits noise); the proper form is a smoothed denominator
+  (`global + prior`) or an `oa_score × f(lift)` blend.
+
+**Verdict: accept raw OA as-is; no head calibration applied.** Infra/boilerplate are **not** zero-trust
+— they carry genuine trust authority, and the trust reference ranks them high too (4.4 OA↔TF), so a
+head with trusted infra near the top is **correct**, not a defect. Damping and the in-degree denylist
+don't help; the OA−global lift is a real but **optional** output-side refinement (a ubiquity-net
+"editorial lift" view), deferred to the Stage 3 production-scoring design if a use case needs it — not
+adopted into the base `open_authority` metric.
+
+**Cost:** damping PPR ~$1.5 + detector ~$0.5 + delta join ~$0.5 (+ two small overlap/delta joins) ≈
+**$3** total.
+
+## Side-track (non-blocking) — open backlink-index insights from the reference panel
+
+Opportunistic analysis riding on the one reference export (local, free; does not gate Exp 4). All
+figures are **aggregates over the OA-stratified 100k panel** — no per-domain reference metric is
+redistributed. By OA decile (top → bottom):
+
+- **Authority tracks link volume across ~6 orders.** Median referring-domain count falls
+  13,348 (top decile) → ~10 (tail); external backlinks 1.97M → ~13. Trust-positive rate 0.99 → 0.04.
+- **No-follow share inverts with authority.** Top-decile inbound is mostly editorial dofollow
+  (~0.11 nofollow) vs ~0.84–0.93 nofollow in the tail — a strong link-quality gradient.
+- **EDU/GOV referring domains concentrate in the head only** (0.81 % of refdomains in the top decile,
+  ~0 below the 6th) — a premium-trust signal aligned with OA.
+- **External spam labels concentrate in low OA** (anti-spam-flag rate 0.001 → 0.012 down the deciles;
+  443 flagged total, 0.4 %, median trust 0) — OA implicitly de-prioritizes flagged spam.
+
+Correlations: **OA ↔ ref_trust 0.769**, **OA ↔ ref_volume 0.823** (OA, still 85 % link-flow, tracks
+volume marginally harder than trust — nuances the OA↔trust framing). The global-PR ↔ ref_volume leg is
+inconclusive here (0.262, n=24k) — global score was only joined for the OA top-100k, a restricted
+sample, not the full panel; a full-panel join is the follow-up. Outlier disagreement is near-zero
+(high-OA/low-trust = 1 CDN; high-trust/low-OA = 0), reinforcing 4.4.
+
+Honest negatives / caveats: the subnet/ref-domain link-farm ratio barely separates flagged from clean
+(0.471 vs 0.500) on this panel; topical/language fields are empty for the ~57 % zero-trust domains
+(no reference data when trust is zero), so those slices are effectively on the trusted ~42k. The full
+**CC-vs-commercial coverage gap** (our graph's in-degree vs the reference's RefDomains by stratum)
+needs a cheap keystone Spark pass for per-domain CC in/out-degree — deferred to the decoupled insight
+track, not Exp 4. Detail (vendor-schema) stays local-only.
+
+## Exp 4.6 — summary: open_authority calibrated and validated
+
+**Goal met.** `open_authority` is personalized PageRank on the V3 domain-collapsed graph, calibrated
+and validated end-to-end for crawl `cc-main-2026-mar-apr-may`.
+
+**Calibrated configuration** (production reads these from config — experiments document *why*, prod
+code is written fresh in pipeline order, never copy-pasted):
+
+| Parameter | Value | Set by |
+| --- | --- | --- |
+| Graph | CC published domain graph (PLD-via-PSL), 118.76M nodes / 4.3B edges | 4.0 gate ACCEPT |
+| Seed | top-10K composite-DR consensus | 4.3 pilot, 4.4 validated |
+| Seed weight | `log_rank` | 4.3 / 4.4 |
+| Damping `d` | 0.85 | 4.1 (global), 4.5 (sweep — no better) |
+| Teleport / dangling | personalized teleport, dangling mass routed onto seed (not uniform) | 4.2 engine |
+
+**Validation.** 4.4 trust-reference gate **PASS**: `auc_trust_positive` 0.938 (OA separates
+trusted from zero-trust), `spearman_pos` 0.769 (ranks the trusted set), across a 57 %-zero-trust panel.
+The side-track adds convergent evidence (volume/nofollow/EDU-GOV/anti-spam all gradient cleanly with
+OA). 4.5 confirmed no automated head calibration is needed — infra/boilerplate carry genuine trust
+(OA↔TF), so a trusted-infra head is correct.
+
+**Deferred (not part of the base metric).** The OA−global *lift* (trust-over-ubiquity, ≈ TF/CF) is a
+real optional output-side ranking for a future "editorial authority" view → Stage 3 production-scoring
+design. The CC-vs-commercial coverage study and the topical/link-type/anti-spam shorts ride the same
+reference export on a decoupled insight track.
+
+**Total Exp 4 cost** ≈ **$10–11** (4.0 ~$1; 4.1 convert+global PR ~$1.9; 4.3 pilot ~$1.5; 4.4 ref
+list + join ~$1; 4.5 damping + detector + delta ~$3; misc joins) — well under the Phase-0 ~$5 + pilot
+budget envelope.
