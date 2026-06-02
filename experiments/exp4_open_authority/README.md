@@ -103,3 +103,67 @@ validation is **OA vs `ref_trust`** (both seeded trust) and **global PR vs `ref_
 measured across the distribution. Only if that correlation is weak do the calibration levers apply
 (lower damping, seed cleaning — the parking/boilerplate demotion is already visible — or the
 OA-minus-global delta). 4.4 builds the reference and measures it.
+
+## Exp 4.4 — trust-reference validation (2026-06-02): **PASS**
+
+Sanity-checks raw `open_authority` against an external trust reference (`ref_trust`). The reference is
+an **orientation point, not a target** — the goal is not to reproduce TF (that would make OA redundant)
+and we do not calibrate toward it. The question is only: does OA's trust signal stay coherent with an
+independent seeded trust-propagation across the distribution, or is it contradicting one (→ cleaning /
+lower damping in 4.5)?
+
+**Reference panel.** `build_ref_list.py` (`stratified_ref_list`, batch `exp44-reflist-20260531-090227`)
+sampled a 100k-domain OA-stratified panel off the converged iter-8 pilot ranking — head + per-`log10(OA)`
+bucket `sampleBy` + `crc32` hard cap — written to `/tmp/exp4_ref_list.txt` and handed to the user for the
+one-shot external export. Built on the converged pilot OA (tol 0.001); the plan's tol-0 iter8/10/14
+cap-calibration is skippable since the ranking already converged.
+
+**Export finding (100k panel returned).** ~**99 % Found** — the external index *has* the domains, so this
+is not a coverage gap — but **57 % carry a zero trust score** (found-but-zero-trust), and trust-positivity
+falls steeply down OA strata: **head-20k 97.4 % → tail-20k 29.3 %**. A single rank correlation over a
+57 %-tied distribution blends "does the domain *have* trust" with "how is trust *ranked*" and misleads.
+
+**Harness (vendor-neutral, committed).**
+
+- `normalize_ref.py` (`normalize_ref_domains`) — PSL-normalizes the returned domains via `tldextract`.
+  Lives here (not in `seed_transforms.py`) so the seed path stays tldextract-free: only the `normalize_ref`
+  submit carries the pydeps zip; `build_seed_vector` submits need none.
+- `join_oa.py` — Spark glue joining normalized ref rows to the pilot OA ranks; carries `status` /
+  `ref_domains` / `ext_backlinks` (status priority-agg `Found > MayExist > NotFound`) so the
+  coverage-vs-trust split survives the join.
+- `validate_oa.py` — rewritten as a **profile**, not a single number: counts (panel/positive/zero/null),
+  `tau_b_all` (ties-robust), `spearman_pos` / `tau_b_pos` on the `ref_trust > 0` subset (ranking *among*
+  trusted), and **binary separation** `auc_trust_positive` (Mann-Whitney `U/(n_pos·n_neg)`, no sklearn) +
+  `positive_rate_by_decile`. Local pandas/scipy — already in the venv, no new dep.
+
+**Metric naming.** Even "TF"/"CF" point at the vendor, so committed code uses `ref_trust` / `ref_volume`.
+The vendor fetcher and raw JSONL archive (134 fields/item) stay in `_local/` (git-excluded).
+
+**Gate run.** `normalize_ref` (local pyspark): 100,000 export rows → **99,960** registered domains
+(40 null-trust/PSL-null dropped, 0 dupes; 57,240 zero-trust / 42,720 positive — confirms the export
+finding). `join_oa` (batch `exp44-joinoa-20260602-084955`, ~5 min, <$1): OA ranks ⋈ v3_map ⋈ ref →
+`oa_overlap` (99,960 rows; the whole panel maps, expected — the panel was sampled *from* the OA
+ranking) + `oa_top10k_full` (full-ranking top-K for unbiased social-share). `validate_oa` (local):
+
+| Metric | Value | Reading |
+| --- | --- | --- |
+| `auc_trust_positive` | **0.938** | OA cleanly separates `ref_trust>0` from `ref_trust==0` |
+| `tau_b_all` (whole panel, ties-robust) | 0.654 | strong despite the 57 % zero-trust ties |
+| `spearman_pos` (`ref_trust>0` subset) | 0.769 | OA orders the trusted set well vs `ref_trust` |
+| `tau_b_pos` | 0.579 | same, Kendall |
+| `positive_rate_by_decile` (top→bottom OA) | `.99 .96 .93 .70 .35 .12 .09 .04 .06 .04` | top-3 OA deciles 93–99 % trusted, steep monotone decline |
+
+(`social_share` = 0 — no `--social-file` passed; an optional secondary metric, not part of the gate.)
+
+**Verdict: PASS.** Raw OA (top-10K seed / `log_rank` / `d=0.85`) stays coherent with the trust
+reference both in binary separation (AUC 0.94 — high OA ⇒ the domain *has* trust) and in ranking among
+trusted domains (Spearman 0.77). This resolves the 4.3 "weak head separation" worry: the head's
+resemblance to global PR is not a defect — trusted-inbound infra genuinely carries trust, matching the
+OA↔TF / globalPR↔CF framing. Because the reference is an orientation point and not a target, the strong
+agreement is a sanity check that OA isn't contradicting an established trust measure, not a claim that
+OA reproduces TF. **Calibration (4.5) is not required** by these numbers; it stays available as an
+option only if a later need to sharpen the head appears.
+
+Caveat: the panel is OA-stratified by construction, so the metrics are conditional on that panel (even
+OA coverage across buckets), not the natural domain distribution — which is the right validation set
+(uniform OA coverage strengthens the separation read rather than inflating it).
