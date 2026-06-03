@@ -7,13 +7,15 @@ tools like Majestic and Ahrefs.
 
 The pipeline is the project's main product: clone the repository, configure
 a scope of domains, run it on your own infrastructure, get your own link
-index. A free public dataset of global domain-level metrics is published as
+index. A free public dataset of global domain-level metrics is planned as
 a lightweight alternative for users who only need authority scores and don't
 want to run the pipeline themselves.
 
-> **Status:** Phase 1 — validation experiments. Active development. No
-> working pipeline yet. The technical specification ([SPEC.md](SPEC.md))
-> defines the intended system; implementation will follow phase by phase.
+> **Status:** Phase 2 — authority pipeline. Active development. The Stage 2
+> (global PageRank) and Stage 3 (open_authority) Spark jobs are implemented
+> and tested, but have not yet been run end-to-end on a full crawl and no
+> dataset is published yet. The technical specification ([SPEC.md](SPEC.md))
+> defines the intended system; implementation continues phase by phase.
 > Sections below will be expanded as features land.
 
 ---
