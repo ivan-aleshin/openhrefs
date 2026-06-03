@@ -19,14 +19,16 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 
 import structlog
+from pydantic import ValidationError
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 
-from spark_jobs.common.config import load_storage
+from spark_jobs.common.config import Authority, load_pipeline_config, load_storage
 from spark_jobs.common.errors import ConfigError, DataSourceError, SparkJobError
-from spark_jobs.common.pagerank import DAMPING, power_iteration
+from spark_jobs.common.pagerank import power_iteration
 from spark_jobs.stage2_pagerank import io, transforms
 
 log = structlog.get_logger()
@@ -146,18 +148,42 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument(
         "--output-path", help="Output Parquet path; defaults to <RAW_PATH>/cc_domain_pagerank."
     )
-    p.add_argument("--max-iter", type=int, default=30)
-    p.add_argument("--tol", type=float, default=0.001)
-    p.add_argument("--damping", type=float, default=DAMPING)
+    p.add_argument("--config", help="Pipeline config path; defaults to the committed config.yml.")
+    # Calibrated params come from config (authority block); these flags only override.
+    p.add_argument("--max-iter", type=int, help="Override config authority.max_iter.")
+    p.add_argument("--tol", type=float, help="Override config authority.tol.")
+    p.add_argument("--damping", type=float, help="Override config authority.damping.")
     p.add_argument("--edge-partitions", type=int, default=1000)
     p.add_argument("--checkpoint-every", type=int, default=4)
     p.add_argument("--checkpoint-dir", default="/tmp/stage2-ckpt")
     p.add_argument("--n-vertices", type=int, help="Optional; validated against the vertex count.")
     args = p.parse_args(argv)
+    _apply_authority(args)
     if args.output_path is None:
         args.output_path = f"{load_storage().raw_path}/cc_domain_pagerank"
     args.output_path = _checked_output_path(args.output_path)
     return args
+
+
+def _apply_authority(args: argparse.Namespace) -> None:
+    """Resolve damping/tol/max_iter from config, apply CLI overrides, validate.
+
+    CLI overrides must pass the same ``Authority`` validation as config values, so an
+    invalid override (e.g. ``--max-iter 0``, which would skip iteration and write the
+    initial uniform vector) fails loudly here instead of producing a silent bad result.
+    """
+    cfg = (
+        load_pipeline_config(Path(args.config)) if args.config else load_pipeline_config()
+    ).authority
+    try:
+        resolved = Authority(
+            damping=args.damping if args.damping is not None else cfg.damping,
+            tol=args.tol if args.tol is not None else cfg.tol,
+            max_iter=args.max_iter if args.max_iter is not None else cfg.max_iter,
+        )
+    except ValidationError as exc:
+        raise ConfigError(f"invalid Stage 2 parameter override: {exc}") from exc
+    args.damping, args.tol, args.max_iter = resolved.damping, resolved.tol, resolved.max_iter
 
 
 def _checked_output_path(path: str) -> str:

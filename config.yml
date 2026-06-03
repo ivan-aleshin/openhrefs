@@ -35,3 +35,12 @@ crawl_window:
 # but listed explicitly so language outputs are stable if scope narrows.
 languages:
   targets: [bul, ron]
+
+# Calibrated PageRank / open_authority parameters (SPEC.md §5). Production stages
+# read these from config; experiments document why each value holds. Operational
+# tuning (edge partitions, checkpoint cadence, Dataproc TTL) is a submission concern
+# and stays on the job CLI / submit script, not here.
+authority:
+  damping: 0.85       # chain-follow probability d (Exp 4 calibration)
+  tol: 0.001          # convergence threshold on the L1 delta between iterations
+  max_iter: 30        # iteration cap; convergence observed ~10-15 on domain graphs

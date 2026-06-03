@@ -6,10 +6,12 @@ import pytest
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import types as T
 
+from spark_jobs.common.config import load_pipeline_config
 from spark_jobs.common.errors import ConfigError, DataSourceError, SparkJobError
 from spark_jobs.stage2_pagerank import io
 from spark_jobs.stage2_pagerank.main import (
     _checked_output_path,
+    _parse_args,
     _resolve_n_vertices,
     _run,
     _validate_graph,
@@ -38,6 +40,46 @@ def test_checked_output_path_allows_other_locations() -> None:
     assert _checked_output_path("/tmp/build/raw/cc_domain_pagerank") == (
         "/tmp/build/raw/cc_domain_pagerank"
     )
+
+
+def test_parse_args_sources_algorithm_params_from_config() -> None:
+    args = _parse_args(
+        ["--edges-path", "e", "--vertices-path", "v", "--crawl", "C", "--output-path", "/tmp/o"]
+    )
+    authority = load_pipeline_config().authority
+    assert args.damping == authority.damping
+    assert args.tol == authority.tol
+    assert args.max_iter == authority.max_iter
+
+
+@pytest.mark.parametrize(
+    "override",
+    [["--max-iter", "0"], ["--tol", "0"], ["--damping", "1.5"]],
+)
+def test_parse_args_rejects_invalid_overrides(override: list[str]) -> None:
+    base = ["--edges-path", "e", "--vertices-path", "v", "--crawl", "C", "--output-path", "/tmp/o"]
+    with pytest.raises(ConfigError, match="override"):
+        _parse_args(base + override)
+
+
+def test_parse_args_reads_custom_config_file(tmp_path) -> None:
+    cfg = tmp_path / "config.local.yml"
+    cfg.write_text("scope:\n  all_of:\n    - language: [bul]\nauthority:\n  damping: 0.7\n")
+    args = _parse_args(
+        [
+            "--edges-path",
+            "e",
+            "--vertices-path",
+            "v",
+            "--crawl",
+            "C",
+            "--output-path",
+            "/tmp/o",
+            "--config",
+            str(cfg),
+        ]
+    )
+    assert args.damping == 0.7
 
 
 def test_read_edges_rejects_wrong_column_type(spark: SparkSession, tmp_path) -> None:

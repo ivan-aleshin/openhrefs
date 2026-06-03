@@ -67,6 +67,18 @@ class Languages(BaseModel):
     targets: list[str] = Field(default_factory=list)
 
 
+class Authority(BaseModel):
+    """Calibrated PageRank / open_authority parameters (SPEC §5; Exp 4).
+
+    Damping and convergence are algorithm calibration read by Stage 2/3; operational
+    tuning (edge partitions, checkpoint cadence, TTL) stays a submission concern.
+    """
+
+    damping: float = Field(default=0.85, gt=0.0, lt=1.0)
+    tol: float = Field(default=0.001, gt=0.0)
+    max_iter: int = Field(default=30, ge=1)
+
+
 class PipelineConfig(BaseModel):
     """Parsed ``config.yml``.
 
@@ -78,6 +90,7 @@ class PipelineConfig(BaseModel):
     scope_params: ScopeParams = Field(default_factory=ScopeParams)
     crawl_window: CrawlWindow = Field(default_factory=CrawlWindow)
     languages: Languages = Field(default_factory=Languages)
+    authority: Authority = Field(default_factory=Authority)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:

@@ -74,3 +74,34 @@ def test_pipeline_config_rejects_unknown_subdomain_handling(tmp_path: Path) -> N
     config = _write_config(tmp_path, "  subdomain_handling: nonsense")
     with pytest.raises(ConfigError, match="invalid pipeline config"):
         load_pipeline_config(config)
+
+
+def test_pipeline_config_loads_authority_calibration() -> None:
+    cfg = load_pipeline_config()
+    assert cfg.authority.damping == 0.85
+    assert cfg.authority.tol == 0.001
+    assert cfg.authority.max_iter == 30
+
+
+def _write_authority_config(tmp_path: Path, authority: str) -> Path:
+    config = tmp_path / "config.yml"
+    config.write_text(f"scope:\n  all_of:\n    - language: [bul]\nauthority:\n{authority}\n")
+    return config
+
+
+def test_pipeline_config_rejects_damping_out_of_unit_interval(tmp_path: Path) -> None:
+    config = _write_authority_config(tmp_path, "  damping: 1.5")
+    with pytest.raises(ConfigError, match="invalid pipeline config"):
+        load_pipeline_config(config)
+
+
+def test_pipeline_config_rejects_non_positive_max_iter(tmp_path: Path) -> None:
+    config = _write_authority_config(tmp_path, "  max_iter: 0")
+    with pytest.raises(ConfigError, match="invalid pipeline config"):
+        load_pipeline_config(config)
+
+
+def test_pipeline_config_rejects_non_positive_tol(tmp_path: Path) -> None:
+    config = _write_authority_config(tmp_path, "  tol: 0")
+    with pytest.raises(ConfigError, match="invalid pipeline config"):
+        load_pipeline_config(config)
