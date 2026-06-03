@@ -53,7 +53,7 @@ warn_unused_configs = true
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["spark_jobs.*.transforms", "spark_jobs.*.transforms.*"]
+module = ["spark_jobs.*.transforms", "spark_jobs.*.transforms.*", "spark_jobs.common.pagerank"]
 strict = true
 
 [tool.pytest.ini_options]
@@ -61,3 +61,4 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 pythonpath = ["."]
+addopts = "--import-mode=importlib"
