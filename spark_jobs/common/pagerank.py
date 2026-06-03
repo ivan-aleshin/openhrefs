@@ -211,7 +211,7 @@ def _build_teleport(nodes: DataFrame, teleport: DataFrame, n: int) -> DataFrame:
     if chk["id_min"] is not None and (chk["id_min"] < 0 or chk["id_max"] >= n):
         raise ValueError(f"teleport vector has ids outside the node set [0, {n})")
     tele = (
-        nodes.join(t, "id", "left")
+        nodes.join(F.broadcast(t), "id", "left")
         .select("id", F.coalesce("w", F.lit(0.0)).alias("w"))
         .persist(StorageLevel.DISK_ONLY)
     )
