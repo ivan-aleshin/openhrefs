@@ -174,6 +174,19 @@ def test_pipeline_config_rejects_non_positive_seed_size(tmp_path: Path) -> None:
         load_pipeline_config(config)
 
 
+def test_pipeline_config_rejects_unknown_authority_key(tmp_path: Path) -> None:
+    config = _write_authority_config(tmp_path, "  max_ter: 5")  # typo of max_iter
+    with pytest.raises(ConfigError, match="invalid pipeline config"):
+        load_pipeline_config(config)
+
+
+def test_pipeline_config_rejects_unknown_top_level_key(tmp_path: Path) -> None:
+    config = tmp_path / "config.yml"
+    config.write_text("scope:\n  all_of:\n    - language: [bul]\nnonsense_block:\n  x: 1\n")
+    with pytest.raises(ConfigError, match="invalid pipeline config"):
+        load_pipeline_config(config)
+
+
 def test_resolve_seed_falls_back_to_config_defaults() -> None:
     resolved = resolve_seed(None, None, None)
     cfg = load_pipeline_config().seed

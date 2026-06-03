@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from spark_jobs.common.errors import ConfigError
@@ -18,6 +18,12 @@ from spark_jobs.common.errors import ConfigError
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_CONFIG = _REPO_ROOT / "config.yml"
 _DEFAULT_STORAGE = _REPO_ROOT / "config" / "storage.yml"
+
+
+class _StrictModel(BaseModel):
+    """Base for config models: reject unknown keys so a typo fails loudly, not silently."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class Settings(BaseSettings):
@@ -36,7 +42,7 @@ class Settings(BaseSettings):
     hf_token: str | None = None
 
 
-class StoragePaths(BaseModel):
+class StoragePaths(_StrictModel):
     """Resolved storage locations for the active environment."""
 
     raw_path: str
@@ -46,7 +52,7 @@ class StoragePaths(BaseModel):
     wat_path: str
 
 
-class ScopeParams(BaseModel):
+class ScopeParams(_StrictModel):
     """Per-domain thresholds applied during scope filtering (SPEC.md §3)."""
 
     min_language_share: float = Field(default=0.30, ge=0.0, le=1.0)
@@ -54,20 +60,20 @@ class ScopeParams(BaseModel):
     subdomain_handling: Literal["root_only", "include", "aggregate"] = "root_only"
 
 
-class CrawlWindow(BaseModel):
+class CrawlWindow(_StrictModel):
     """Sliding scoring window configuration (SPEC.md §4)."""
 
     recent_count: int = Field(default=6, ge=1)
     historical_anchors: bool = True
 
 
-class Languages(BaseModel):
+class Languages(_StrictModel):
     """Target languages the pipeline classifies and reports."""
 
     targets: list[str] = Field(default_factory=list)
 
 
-class Authority(BaseModel):
+class Authority(_StrictModel):
     """Calibrated PageRank / open_authority parameters (SPEC §5; Exp 4).
 
     Damping and convergence are algorithm calibration read by Stage 2/3; operational
@@ -79,7 +85,7 @@ class Authority(BaseModel):
     max_iter: int = Field(default=30, ge=1)
 
 
-class Seed(BaseModel):
+class Seed(_StrictModel):
     """composite-DR seed-set parameters for Stage 3 personalized PageRank (SPEC §5).
 
     Production-validated mode is top-10K + ``log_rank`` + damping 0.85 (Exp 4); the other
@@ -90,7 +96,7 @@ class Seed(BaseModel):
     weight: Literal["log_rank", "sqrt_rank", "uniform", "score"] = "log_rank"
 
 
-class PipelineConfig(BaseModel):
+class PipelineConfig(_StrictModel):
     """Parsed ``config.yml``.
 
     The ``scope`` grammar is kept as a raw mapping; it is evaluated by Stage 1
