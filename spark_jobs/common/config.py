@@ -79,6 +79,17 @@ class Authority(BaseModel):
     max_iter: int = Field(default=30, ge=1)
 
 
+class Seed(BaseModel):
+    """composite-DR seed-set parameters for Stage 3 personalized PageRank (SPEC §5).
+
+    Production-validated mode is top-10K + ``log_rank`` + damping 0.85 (Exp 4); the other
+    weights are deliberate override modes, not equally calibrated.
+    """
+
+    size: int = Field(default=10000, ge=1)
+    weight: Literal["log_rank", "sqrt_rank", "uniform", "score"] = "log_rank"
+
+
 class PipelineConfig(BaseModel):
     """Parsed ``config.yml``.
 
@@ -91,6 +102,7 @@ class PipelineConfig(BaseModel):
     crawl_window: CrawlWindow = Field(default_factory=CrawlWindow)
     languages: Languages = Field(default_factory=Languages)
     authority: Authority = Field(default_factory=Authority)
+    seed: Seed = Field(default_factory=Seed)
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
@@ -157,6 +169,28 @@ def resolve_authority(
         )
     except ValidationError as exc:
         raise ConfigError(f"invalid authority parameter override: {exc}") from exc
+
+
+def resolve_seed(
+    config_path: Path | None,
+    size: int | None,
+    weight: str | None,
+) -> Seed:
+    """Seed-set params from config, with optional CLI overrides (validated as one unit).
+
+    Kept separate from :func:`resolve_authority` so Stage 2 (PageRank iteration params
+    only) never carries Stage 3 seed context.
+    """
+    cfg = (load_pipeline_config(config_path) if config_path else load_pipeline_config()).seed
+    try:
+        return Seed.model_validate(
+            {
+                "size": size if size is not None else cfg.size,
+                "weight": weight if weight is not None else cfg.weight,
+            }
+        )
+    except ValidationError as exc:
+        raise ConfigError(f"invalid seed parameter override: {exc}") from exc
 
 
 def checked_stage_output_path(path: str) -> str:

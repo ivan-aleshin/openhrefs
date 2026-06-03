@@ -10,6 +10,7 @@ from spark_jobs.common.config import (
     load_pipeline_config,
     load_storage,
     resolve_authority,
+    resolve_seed,
 )
 from spark_jobs.common.errors import ConfigError
 
@@ -147,3 +148,44 @@ def test_checked_stage_output_path_rejects_fixtures() -> None:
 
 def test_checked_stage_output_path_allows_build_location() -> None:
     assert checked_stage_output_path("/tmp/build/raw/x") == "/tmp/build/raw/x"
+
+
+def _write_seed_config(tmp_path: Path, seed: str) -> Path:
+    config = tmp_path / "config.yml"
+    config.write_text(f"scope:\n  all_of:\n    - language: [bul]\nseed:\n{seed}\n")
+    return config
+
+
+def test_pipeline_config_loads_seed_defaults() -> None:
+    cfg = load_pipeline_config()
+    assert cfg.seed.size == 10000
+    assert cfg.seed.weight == "log_rank"
+
+
+def test_pipeline_config_rejects_invalid_seed_weight(tmp_path: Path) -> None:
+    config = _write_seed_config(tmp_path, "  weight: nonsense")
+    with pytest.raises(ConfigError, match="invalid pipeline config"):
+        load_pipeline_config(config)
+
+
+def test_pipeline_config_rejects_non_positive_seed_size(tmp_path: Path) -> None:
+    config = _write_seed_config(tmp_path, "  size: 0")
+    with pytest.raises(ConfigError, match="invalid pipeline config"):
+        load_pipeline_config(config)
+
+
+def test_resolve_seed_falls_back_to_config_defaults() -> None:
+    resolved = resolve_seed(None, None, None)
+    cfg = load_pipeline_config().seed
+    assert (resolved.size, resolved.weight) == (cfg.size, cfg.weight)
+
+
+def test_resolve_seed_applies_overrides() -> None:
+    resolved = resolve_seed(None, 500, "sqrt_rank")
+    assert (resolved.size, resolved.weight) == (500, "sqrt_rank")
+
+
+@pytest.mark.parametrize(("size", "weight"), [(0, None), (None, "nonsense")])
+def test_resolve_seed_rejects_invalid_overrides(size: int | None, weight: str | None) -> None:
+    with pytest.raises(ConfigError, match="override"):
+        resolve_seed(None, size, weight)
