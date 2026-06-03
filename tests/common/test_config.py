@@ -6,8 +6,10 @@ import pytest
 
 from spark_jobs.common.config import (
     Settings,
+    checked_stage_output_path,
     load_pipeline_config,
     load_storage,
+    resolve_authority,
 )
 from spark_jobs.common.errors import ConfigError
 
@@ -105,3 +107,43 @@ def test_pipeline_config_rejects_non_positive_tol(tmp_path: Path) -> None:
     config = _write_authority_config(tmp_path, "  tol: 0")
     with pytest.raises(ConfigError, match="invalid pipeline config"):
         load_pipeline_config(config)
+
+
+def test_resolve_authority_falls_back_to_config_defaults() -> None:
+    resolved = resolve_authority(None, None, None, None)
+    cfg = load_pipeline_config().authority
+    assert (resolved.damping, resolved.tol, resolved.max_iter) == (
+        cfg.damping,
+        cfg.tol,
+        cfg.max_iter,
+    )
+
+
+def test_resolve_authority_applies_overrides() -> None:
+    resolved = resolve_authority(None, 0.9, 0.01, 5)
+    assert (resolved.damping, resolved.tol, resolved.max_iter) == (0.9, 0.01, 5)
+
+
+@pytest.mark.parametrize(
+    ("damping", "tol", "max_iter"),
+    [(1.5, None, None), (None, 0.0, None), (None, None, 0)],
+)
+def test_resolve_authority_rejects_invalid_overrides(
+    damping: float | None, tol: float | None, max_iter: int | None
+) -> None:
+    with pytest.raises(ConfigError, match="override"):
+        resolve_authority(None, damping, tol, max_iter)
+
+
+def test_resolve_authority_reads_custom_config(tmp_path: Path) -> None:
+    config = _write_authority_config(tmp_path, "  damping: 0.7")
+    assert resolve_authority(config, None, None, None).damping == 0.7
+
+
+def test_checked_stage_output_path_rejects_fixtures() -> None:
+    with pytest.raises(ConfigError, match="fixtures"):
+        checked_stage_output_path("tests/fixtures/parquet/cc_domain_pagerank")
+
+
+def test_checked_stage_output_path_allows_build_location() -> None:
+    assert checked_stage_output_path("/tmp/build/raw/x") == "/tmp/build/raw/x"

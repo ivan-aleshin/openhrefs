@@ -22,12 +22,11 @@ import sys
 from pathlib import Path
 
 import structlog
-from pydantic import ValidationError
 from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql import functions as F
 
-from spark_jobs.common.config import Authority, load_pipeline_config, load_storage
-from spark_jobs.common.errors import ConfigError, DataSourceError, SparkJobError
+from spark_jobs.common.config import checked_stage_output_path, load_storage, resolve_authority
+from spark_jobs.common.errors import SparkJobError
+from spark_jobs.common.graph_validation import validate_graph
 from spark_jobs.common.pagerank import power_iteration
 from spark_jobs.stage2_pagerank import io, transforms
 
@@ -51,7 +50,7 @@ def _run(spark: SparkSession, args: argparse.Namespace) -> None:
     edges = io.read_edges(spark, args.edges_path)
     vertices = io.read_vertices(spark, args.vertices_path)
     n_vertices = _resolve_n_vertices(vertices, args.n_vertices)
-    _validate_graph(vertices, edges, n_vertices)
+    validate_graph(vertices, edges, n_vertices)
     nodes = vertices.select("id")
     ranks = power_iteration(
         edges,
@@ -83,61 +82,6 @@ def _resolve_n_vertices(vertices: DataFrame, declared: int | None) -> int:
     return actual
 
 
-def _validate_graph(vertices: DataFrame, edges: DataFrame, n: int) -> None:
-    """Enforce the dense-id graph contract at the Stage 2 boundary (see ``power_iteration``).
-
-    A corrupt staged graph (non-dense/duplicate ids, null or out-of-range edge endpoints,
-    null domains) would otherwise yield a silently wrong PageRank, leak mass, or emit a
-    null-domain row. Vertices must be dense ``[0, n)`` with non-null domains; every edge
-    endpoint must be non-null and fall in that range.
-    """
-    _validate_vertices(vertices, n)
-    _validate_edges(edges, n)
-
-
-def _validate_vertices(vertices: DataFrame, n: int) -> None:
-    v = vertices.agg(
-        F.countDistinct("id").alias("distinct"),
-        F.min("id").alias("min"),
-        F.max("id").alias("max"),
-        F.sum(F.when(F.col("domain").isNull(), 1).otherwise(0)).alias("null_domain"),
-        F.countDistinct("domain").alias("distinct_domain"),
-    ).first()
-    assert v is not None
-    if v["distinct"] != n or v["min"] != 0 or v["max"] != n - 1:
-        raise DataSourceError(
-            f"vertices are not dense [0, {n}): distinct={v['distinct']} "
-            f"min={v['min']} max={v['max']}"
-        )
-    if v["null_domain"]:
-        raise DataSourceError(f"vertex map has {v['null_domain']} rows with a null domain")
-    if v["distinct_domain"] != n:
-        raise DataSourceError(
-            f"vertex map domains are not unique: {v['distinct_domain']} distinct for {n} ids"
-        )
-
-
-def _validate_edges(edges: DataFrame, n: int) -> None:
-    e = edges.agg(
-        F.min("from_id").alias("fmn"),
-        F.max("from_id").alias("fmx"),
-        F.min("to_id").alias("tmn"),
-        F.max("to_id").alias("tmx"),
-        F.sum(F.when(F.col("from_id").isNull() | F.col("to_id").isNull(), 1).otherwise(0)).alias(
-            "null_ends"
-        ),
-    ).first()
-    assert e is not None
-    if e["null_ends"]:
-        raise DataSourceError(f"edges have {e['null_ends']} rows with a null endpoint")
-    mins = [x for x in (e["fmn"], e["tmn"]) if x is not None]
-    maxs = [x for x in (e["fmx"], e["tmx"]) if x is not None]
-    if mins and (min(mins) < 0 or max(maxs) >= n):
-        raise DataSourceError(
-            f"edge ids fall outside the vertex range [0, {n}): min={min(mins)} max={max(maxs)}"
-        )
-
-
 def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Stage 2 — global PageRank.")
     p.add_argument(
@@ -158,47 +102,14 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     p.add_argument("--checkpoint-dir", default="/tmp/stage2-ckpt")
     p.add_argument("--n-vertices", type=int, help="Optional; validated against the vertex count.")
     args = p.parse_args(argv)
-    _apply_authority(args)
+    authority = resolve_authority(
+        Path(args.config) if args.config else None, args.damping, args.tol, args.max_iter
+    )
+    args.damping, args.tol, args.max_iter = authority.damping, authority.tol, authority.max_iter
     if args.output_path is None:
         args.output_path = f"{load_storage().raw_path}/cc_domain_pagerank"
-    args.output_path = _checked_output_path(args.output_path)
+    args.output_path = checked_stage_output_path(args.output_path)
     return args
-
-
-def _apply_authority(args: argparse.Namespace) -> None:
-    """Resolve damping/tol/max_iter from config, apply CLI overrides, validate.
-
-    CLI overrides must pass the same ``Authority`` validation as config values, so an
-    invalid override (e.g. ``--max-iter 0``, which would skip iteration and write the
-    initial uniform vector) fails loudly here instead of producing a silent bad result.
-    """
-    cfg = (
-        load_pipeline_config(Path(args.config)) if args.config else load_pipeline_config()
-    ).authority
-    try:
-        resolved = Authority(
-            damping=args.damping if args.damping is not None else cfg.damping,
-            tol=args.tol if args.tol is not None else cfg.tol,
-            max_iter=args.max_iter if args.max_iter is not None else cfg.max_iter,
-        )
-    except ValidationError as exc:
-        raise ConfigError(f"invalid Stage 2 parameter override: {exc}") from exc
-    args.damping, args.tol, args.max_iter = resolved.damping, resolved.tol, resolved.max_iter
-
-
-def _checked_output_path(path: str) -> str:
-    """Reject writing stage output into the committed fixtures tree.
-
-    The ``local`` storage ``raw_path`` is ``tests/fixtures/parquet`` (committed fixtures
-    that dbt-local reads), so the config-derived default would overwrite them. A local
-    run must point ``--output-path`` at a scratch/build location instead.
-    """
-    if "tests/fixtures" in path:
-        raise ConfigError(
-            f"refusing to write stage output into committed fixtures: {path}; "
-            "pass an explicit --output-path (e.g. a build/ or /tmp path)"
-        )
-    return path
 
 
 if __name__ == "__main__":

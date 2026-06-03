@@ -134,3 +134,41 @@ def load_pipeline_config(config_file: Path = _DEFAULT_CONFIG) -> PipelineConfig:
         return PipelineConfig(**_read_yaml(config_file))
     except ValidationError as exc:
         raise ConfigError(f"invalid pipeline config {config_file}: {exc}") from exc
+
+
+def resolve_authority(
+    config_path: Path | None,
+    damping: float | None,
+    tol: float | None,
+    max_iter: int | None,
+) -> Authority:
+    """Authority (PageRank iteration) params from config, with optional CLI overrides.
+
+    Overrides pass the same ``Authority`` validation as config values, so an invalid
+    override (e.g. ``max_iter=0``, which would skip iteration and emit the initial
+    vector) raises ``ConfigError`` rather than silently degrading the run.
+    """
+    cfg = (load_pipeline_config(config_path) if config_path else load_pipeline_config()).authority
+    try:
+        return Authority(
+            damping=damping if damping is not None else cfg.damping,
+            tol=tol if tol is not None else cfg.tol,
+            max_iter=max_iter if max_iter is not None else cfg.max_iter,
+        )
+    except ValidationError as exc:
+        raise ConfigError(f"invalid authority parameter override: {exc}") from exc
+
+
+def checked_stage_output_path(path: str) -> str:
+    """Reject writing a stage's output into the committed fixtures tree.
+
+    The ``local`` storage ``raw_path`` is the committed ``tests/fixtures/parquet`` that
+    dbt-local reads, so a config-derived default would overwrite fixtures; a local run
+    must target a scratch/build location via an explicit output path.
+    """
+    if "tests/fixtures" in path:
+        raise ConfigError(
+            f"refusing to write stage output into committed fixtures: {path}; "
+            "pass an explicit output path (e.g. a build/ or /tmp location)"
+        )
+    return path

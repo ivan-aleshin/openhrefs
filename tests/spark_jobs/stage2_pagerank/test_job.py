@@ -9,13 +9,7 @@ from pyspark.sql import types as T
 from spark_jobs.common.config import load_pipeline_config
 from spark_jobs.common.errors import ConfigError, DataSourceError, SparkJobError
 from spark_jobs.stage2_pagerank import io
-from spark_jobs.stage2_pagerank.main import (
-    _checked_output_path,
-    _parse_args,
-    _resolve_n_vertices,
-    _run,
-    _validate_graph,
-)
+from spark_jobs.stage2_pagerank.main import _parse_args, _resolve_n_vertices, _run
 
 _VERTEX_SCHEMA = T.StructType(
     [
@@ -29,17 +23,6 @@ _EDGE_SCHEMA = T.StructType(
         T.StructField("to_id", T.LongType(), nullable=False),
     ]
 )
-
-
-def test_checked_output_path_refuses_committed_fixtures() -> None:
-    with pytest.raises(ConfigError, match="fixtures"):
-        _checked_output_path("tests/fixtures/parquet/cc_domain_pagerank")
-
-
-def test_checked_output_path_allows_other_locations() -> None:
-    assert _checked_output_path("/tmp/build/raw/cc_domain_pagerank") == (
-        "/tmp/build/raw/cc_domain_pagerank"
-    )
 
 
 def test_parse_args_sources_algorithm_params_from_config() -> None:
@@ -121,63 +104,6 @@ def _verts(spark: SparkSession, rows: list[tuple[int, str]]) -> DataFrame:
 
 def _edges(spark: SparkSession, rows: list[tuple[int, int]]) -> DataFrame:
     return spark.createDataFrame(rows, _EDGE_SCHEMA)
-
-
-def test_validate_graph_accepts_dense_graph(spark: SparkSession) -> None:
-    verts = _verts(spark, [(0, "a"), (1, "b"), (2, "c")])
-    edges = _edges(spark, [(0, 1), (1, 2)])
-    _validate_graph(verts, edges, n=3)  # no raise
-
-
-def test_validate_graph_rejects_duplicate_ids(spark: SparkSession) -> None:
-    verts = _verts(spark, [(0, "a"), (1, "b"), (1, "c")])
-    with pytest.raises(DataSourceError, match="dense"):
-        _validate_graph(verts, _edges(spark, [(0, 1)]), n=3)
-
-
-def test_validate_graph_rejects_non_contiguous_ids(spark: SparkSession) -> None:
-    verts = _verts(spark, [(0, "a"), (1, "b"), (3, "c")])  # gap: max=3, n-1=2
-    with pytest.raises(DataSourceError, match="dense"):
-        _validate_graph(verts, _edges(spark, [(0, 1)]), n=3)
-
-
-def test_validate_graph_rejects_edge_id_out_of_range(spark: SparkSession) -> None:
-    verts = _verts(spark, [(0, "a"), (1, "b"), (2, "c")])
-    edges = _edges(spark, [(0, 5)])  # to_id 5 outside [0, 3)
-    with pytest.raises(DataSourceError, match="outside"):
-        _validate_graph(verts, edges, n=3)
-
-
-def test_validate_graph_rejects_null_edge_endpoint(spark: SparkSession) -> None:
-    verts = _verts(spark, [(0, "a"), (1, "b"), (2, "c")])
-    nullable_edges = T.StructType(
-        [
-            T.StructField("from_id", T.LongType(), nullable=True),
-            T.StructField("to_id", T.LongType(), nullable=True),
-        ]
-    )
-    edges = spark.createDataFrame([(0, 1), (None, 2)], nullable_edges)
-    with pytest.raises(DataSourceError, match="null"):
-        _validate_graph(verts, edges, n=3)
-
-
-def test_validate_graph_rejects_duplicate_domain(spark: SparkSession) -> None:
-    # dense unique ids, but two ids map to the same domain (the mart key must be unique).
-    verts = _verts(spark, [(0, "a.com"), (1, "a.com"), (2, "c.net")])
-    with pytest.raises(DataSourceError, match="domain"):
-        _validate_graph(verts, _edges(spark, [(0, 1)]), n=3)
-
-
-def test_validate_graph_rejects_null_domain(spark: SparkSession) -> None:
-    nullable_verts = T.StructType(
-        [
-            T.StructField("id", T.LongType(), nullable=False),
-            T.StructField("domain", T.StringType(), nullable=True),
-        ]
-    )
-    verts = spark.createDataFrame([(0, "a"), (1, None), (2, "c")], nullable_verts)
-    with pytest.raises(DataSourceError, match="null domain"):
-        _validate_graph(verts, _edges(spark, [(0, 1)]), n=3)
 
 
 def test_resolve_n_vertices_returns_count(spark: SparkSession) -> None:
