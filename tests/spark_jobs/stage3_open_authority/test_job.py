@@ -113,6 +113,19 @@ def _job_args(tmp_path, **overrides) -> argparse.Namespace:
     return argparse.Namespace(**base)
 
 
+def test_run_fails_on_off_graph_seed_before_edge_validation(spark: SparkSession, tmp_path) -> None:
+    # Off-graph seed + deliberately out-of-range edges: the off-graph mapping failure must
+    # fire before the (expensive) edge validation, proving fail-fast ordering.
+    args = _job_args(tmp_path)
+    spark.createDataFrame([(0, 99)], _EDGE_SCHEMA).write.parquet(args.edges_path)  # 99 out of range
+    spark.createDataFrame([(0, "a.com"), (1, "b.org"), (2, "c.net")], _VERTEX_SCHEMA).write.parquet(
+        args.vertices_path
+    )
+    (tmp_path / "seed.csv").write_text("registered_domain,consensus_score\nz.io,0.9\n")  # off-graph
+    with pytest.raises(DataSourceError, match="off-graph"):
+        _run(spark, args)
+
+
 def test_run_writes_conserved_open_authority(spark: SparkSession, tmp_path) -> None:
     args = _job_args(tmp_path)
     spark.createDataFrame([(1, 0), (2, 0), (2, 1)], _EDGE_SCHEMA).write.parquet(args.edges_path)

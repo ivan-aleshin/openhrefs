@@ -16,12 +16,18 @@ from spark_jobs.common.errors import DataSourceError
 
 
 def validate_graph(vertices: DataFrame, edges: DataFrame, n: int) -> None:
-    """Validate the dense-id graph contract; raise ``DataSourceError`` on violation."""
-    _validate_vertices(vertices, n)
-    _validate_edges(edges, n)
+    """Validate the full dense-id graph contract (vertices then edges).
+
+    Convenience facade; callers that interleave other work (e.g. building a seed
+    teleport between the two) can call :func:`validate_vertices` and
+    :func:`validate_edges` directly. Raises ``DataSourceError`` on violation.
+    """
+    validate_vertices(vertices, n)
+    validate_edges(edges, n)
 
 
-def _validate_vertices(vertices: DataFrame, n: int) -> None:
+def validate_vertices(vertices: DataFrame, n: int) -> None:
+    """Validate vertices are dense ``[0, n)`` with non-null, unique domains."""
     v = vertices.agg(
         F.countDistinct("id").alias("distinct"),
         F.min("id").alias("min"),
@@ -43,7 +49,8 @@ def _validate_vertices(vertices: DataFrame, n: int) -> None:
         )
 
 
-def _validate_edges(edges: DataFrame, n: int) -> None:
+def validate_edges(edges: DataFrame, n: int) -> None:
+    """Validate every edge endpoint is non-null and within the vertex range ``[0, n)``."""
     e = edges.agg(
         F.min("from_id").alias("fmn"),
         F.max("from_id").alias("fmx"),

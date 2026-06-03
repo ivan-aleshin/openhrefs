@@ -28,7 +28,7 @@ from spark_jobs.common.config import (
     resolve_seed,
 )
 from spark_jobs.common.errors import SparkJobError
-from spark_jobs.common.graph_validation import validate_graph
+from spark_jobs.common.graph_validation import validate_edges, validate_vertices
 from spark_jobs.common.pagerank import power_iteration
 from spark_jobs.stage3_open_authority import io, transforms
 
@@ -52,11 +52,15 @@ def _run(spark: SparkSession, args: argparse.Namespace) -> None:
     edges = io.read_edges(spark, args.edges_path)
     vertices = io.read_vertices(spark, args.vertices_path)
     seed = io.read_seed(spark, args.seed_path)
-    n_vertices = _resolve_n_vertices(vertices, args.n_vertices)
-    validate_graph(vertices, edges, n_vertices)
-    nodes = vertices.select("id")
+    # Fail fast in increasing cost order: weight the (small) seed, validate vertices,
+    # build the teleport (off-graph seed fails here), and only then validate edges and
+    # iterate — so a bad seed or seed/graph mismatch never pays the 4.3B-edge passes.
     weights = transforms.weight_from_consensus(seed, args.seed_weight, args.seed_size)
+    n_vertices = _resolve_n_vertices(vertices, args.n_vertices)
+    validate_vertices(vertices, n_vertices)
+    nodes = vertices.select("id")
     teleport = transforms.to_teleport_vector(weights, vertices)
+    validate_edges(edges, n_vertices)
     ranks = power_iteration(
         edges,
         nodes,

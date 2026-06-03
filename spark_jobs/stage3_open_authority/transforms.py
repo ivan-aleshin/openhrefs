@@ -28,7 +28,8 @@ def weight_from_consensus(consensus: DataFrame, weight: str, seed_size: int) -> 
 
     Raises:
         ValueError: if ``weight`` is not a known formula.
-        DataSourceError: if the ``score`` weighting yields no positive weight.
+        DataSourceError: if the seed is empty, has a null/blank domain or a
+            null/NaN/negative consensus, or the ``score`` weighting yields no positive weight.
     """
     if weight not in _WEIGHTS:
         raise ValueError(f"unknown seed weight formula: {weight}")
@@ -53,6 +54,7 @@ def _validate_seed(consensus: DataFrame) -> None:
     seed must not silently receive a teleport weight or reach the paid power iteration.
     """
     chk = consensus.agg(
+        F.count("*").alias("rows"),
         F.sum(
             F.when(F.col("domain").isNull() | (F.trim(F.col("domain")) == ""), 1).otherwise(0)
         ).alias("bad_domain"),
@@ -63,6 +65,8 @@ def _validate_seed(consensus: DataFrame) -> None:
         ).alias("bad_consensus"),
     ).first()
     assert chk is not None
+    if chk["rows"] == 0:
+        raise DataSourceError("seed is empty")
     if chk["bad_domain"]:
         raise DataSourceError(f"seed has {chk['bad_domain']} rows with a null/blank domain")
     if chk["bad_consensus"]:
