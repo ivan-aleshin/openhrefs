@@ -10,6 +10,7 @@ JVM is needed. Re-run after changing a fixture; commit the resulting .parquet.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import duckdb
@@ -53,10 +54,12 @@ def main() -> None:
     con = duckdb.connect()
     for dataset, select in _DATASETS.items():
         out_dir = _HERE / dataset
-        out_dir.mkdir(parents=True, exist_ok=True)
-        target = out_dir / "data.parquet"
-        con.execute(f"COPY ({select}) TO '{target}' (FORMAT parquet)")
-        print(f"wrote {target}")
+        if out_dir.exists():
+            shutil.rmtree(out_dir)
+        # Partition by crawl to match the Spark stage output layout
+        # (cc_*/crawl=<id>/*.parquet), so dbt-local reads exercise the real path.
+        con.execute(f"COPY ({select}) TO '{out_dir}' (FORMAT parquet, PARTITION_BY (crawl))")
+        print(f"wrote {out_dir} (partitioned by crawl)")
 
 
 if __name__ == "__main__":

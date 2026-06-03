@@ -7,7 +7,7 @@ sources:
       - name: cc_domain_authority
         description: "Stage 3 output — per-domain open_authority and open_volume (SPEC §5)."
         meta:
-          external_location: "read_parquet('{{ env_var(\"RAW_PATH\", \"../tests/fixtures/parquet\") }}/cc_domain_authority/*.parquet')"
+          external_location: "read_parquet('{{ env_var(\"RAW_PATH\", \"../tests/fixtures/parquet\") }}/cc_domain_authority/**/*.parquet', hive_partitioning=true)"
         columns:
           - name: domain
             description: Root domain.
@@ -21,7 +21,7 @@ sources:
       - name: cc_domain_pagerank
         description: "Stage 2 output — per-domain PageRank and in/out degree (SPEC §5)."
         meta:
-          external_location: "read_parquet('{{ env_var(\"RAW_PATH\", \"../tests/fixtures/parquet\") }}/cc_domain_pagerank/*.parquet')"
+          external_location: "read_parquet('{{ env_var(\"RAW_PATH\", \"../tests/fixtures/parquet\") }}/cc_domain_pagerank/**/*.parquet', hive_partitioning=true)"
         columns:
           - name: domain
             description: Root domain.
