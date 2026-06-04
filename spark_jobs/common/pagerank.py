@@ -12,9 +12,12 @@ stage ``io.py`` / ``main.py``.
 
 from __future__ import annotations
 
+import structlog
 from pyspark import StorageLevel
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
+
+log = structlog.get_logger()
 
 DAMPING = 0.85
 
@@ -113,7 +116,8 @@ def _run_iterations(
         ranks = nodes.select("id", F.lit(1.0 / n).alias("rank"))
     for i in range(1, max_iter + 1):
         new_ranks, src = _step(edges, ranks, outdeg, nodes, n=n, damping=damping, teleport=tele)
-        if checkpoint_every and (i % checkpoint_every == 0 or i == max_iter):
+        checkpointed = bool(checkpoint_every and (i % checkpoint_every == 0 or i == max_iter))
+        if checkpointed:
             new_ranks = new_ranks.checkpoint(eager=True)
         else:
             new_ranks = new_ranks.persist(StorageLevel.DISK_ONLY)
@@ -122,6 +126,13 @@ def _run_iterations(
             ranks.unpersist()
         src.unpersist()
         ranks = new_ranks
+        log.info(
+            "pagerank_iteration",
+            iteration=i,
+            l1_delta=delta,
+            checkpointed=checkpointed,
+            converged=delta < tol,
+        )
         if delta < tol:
             break
     return ranks

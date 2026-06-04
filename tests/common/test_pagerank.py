@@ -3,6 +3,7 @@
 import pytest
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import types as T
+from structlog.testing import capture_logs
 
 from spark_jobs.common.pagerank import power_iteration
 
@@ -42,6 +43,16 @@ def test_power_iteration_conserves_mass(spark: SparkSession) -> None:
     edges = _edges(spark, [(1, 0), (2, 0), (2, 1)])
     result = power_iteration(edges, nodes, max_iter=6, tol=1e-9, checkpoint_every=2)
     assert abs(sum(_ranks(result).values()) - 1.0) < 1e-6
+
+
+def test_power_iteration_logs_each_iteration(spark: SparkSession) -> None:
+    nodes = _nodes(spark, [0, 1, 2])
+    edges = _edges(spark, [(1, 0), (2, 0), (2, 1)])
+    with capture_logs() as logs:
+        power_iteration(edges, nodes, max_iter=3, tol=0.0, checkpoint_every=0)
+    iters = [e for e in logs if e["event"] == "pagerank_iteration"]
+    assert [e["iteration"] for e in iters] == [1, 2, 3]
+    assert all("l1_delta" in e and "checkpointed" in e for e in iters)
 
 
 def test_power_iteration_rejects_empty_node_set(spark: SparkSession) -> None:
