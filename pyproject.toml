@@ -58,6 +58,8 @@ module = [
     "spark_jobs.*.transforms.*",
     "spark_jobs.common.pagerank",
     "spark_jobs.common.graph_validation",
+    "spark_jobs.common.domains",
+    "spark_jobs.validation.stage2_opr.transforms",
 ]
 strict = true
 
