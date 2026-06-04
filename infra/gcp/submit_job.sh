@@ -13,7 +13,11 @@
 #     --edges-path gs://.../staged/v3_edges --vertices-path gs://.../staged/v3_map \
 #     --crawl cc-main-2026-mar-apr-may --checkpoint-dir gs://.../checkpoints/stage2
 #
-# Env vars (optional, with defaults):
+# Dependencies ship in a custom container image (built by build_image.sh); only
+# project code rides --py-files. Set DATAPROC_IMAGE to an explicit versioned tag.
+#
+# Env vars:
+#   DATAPROC_IMAGE            custom container image (REQUIRED). Explicit versioned tag, never :latest.
 #   DATAPROC_RUNTIME_VERSION  Serverless runtime, minor only (default 2.2; subminor is rejected).
 #   DATAPROC_TTL              batch time-to-live (default 6h). The platform default (4h) silently
 #                             CANCELs long iterative jobs — always set this for Stage 2/3.
@@ -34,31 +38,28 @@ PROJECT="${GCP_PROJECT:-$(gcloud config get-value project 2>/dev/null)}"
 REGION="${GCP_REGION:-us-central1}"
 SA="${DATAPROC_SA:?DATAPROC_SA not set — add to .env: DATAPROC_SA=<sa>@<project>.iam.gserviceaccount.com}"
 DEPS_GCS="${DATAPROC_DEPS_BUCKET:?DATAPROC_DEPS_BUCKET not set — add to .env: DATAPROC_DEPS_BUCKET=gs://<bucket>/deps}"
+IMAGE="${DATAPROC_IMAGE:?DATAPROC_IMAGE not set — build with infra/gcp/build_image.sh and pass an explicit versioned tag}"
+case "${IMAGE##*/}" in
+  *:latest) echo "DATAPROC_IMAGE must use an explicit versioned tag, not :latest" >&2; exit 1 ;;
+  *:*) ;;
+  *) echo "DATAPROC_IMAGE must include an explicit tag (image:tag)" >&2; exit 1 ;;
+esac
 RUNTIME_VERSION="${DATAPROC_RUNTIME_VERSION:-2.2}"
 TTL="${DATAPROC_TTL:-6h}"
 ZIP_JOBS="/tmp/openhrefs_spark_jobs.zip"
-ZIP_DEPS="/tmp/openhrefs_pypackages.zip"
-DEPS_DIR="/tmp/openhrefs_pypackages"
 
-rm -f "$ZIP_JOBS" "$ZIP_DEPS"
+rm -f "$ZIP_JOBS"
 
 echo "==> Packaging spark_jobs/"
 zip -r "$ZIP_JOBS" spark_jobs/ -x "**/__pycache__/*" -x "**/*.pyc" -q
 
-echo "==> Installing Python dependencies"
-rm -rf "$DEPS_DIR"
-uv export --format requirements-txt --no-hashes --no-dev -q \
-  | uv pip install -r /dev/stdin --target "$DEPS_DIR" -q
-(cd "$DEPS_DIR" && zip -r "$ZIP_DEPS" . -x "**/__pycache__/*" -x "**/*.pyc" -x "*.dist-info/*" -q)
-
 echo "==> Uploading to ${DEPS_GCS}/"
 gsutil -q cp "$ZIP_JOBS" "${DEPS_GCS}/spark_jobs.zip"
-gsutil -q cp "$ZIP_DEPS" "${DEPS_GCS}/pypackages.zip"
 
-# Requester-pays stays wired for future direct gs://commoncrawl reads (Track B / once
-# billing access is unblocked, ADR-0003). Stage 2/3 currently use staged graph inputs,
-# so these properties are harmless there. Iterative-job tuning is appended only when the
-# env var is set, so quick jobs (hello) don't inherit Stage 2/3 executor/shuffle sizing.
+# Requester-pays stays wired for future direct gs://commoncrawl reads (once billing
+# access is unblocked). Stage 2/3 currently use staged graph inputs, so these properties
+# are harmless there. Iterative-job tuning is appended only when the env var is set, so
+# quick jobs (hello) don't inherit Stage 2/3 executor/shuffle sizing.
 PROPS="spark.hadoop.fs.gs.requester.pays.mode=ENABLED,spark.hadoop.fs.gs.requester.pays.project.id=${PROJECT}"
 if [ -n "${DATAPROC_MAX_EXECUTORS:-}" ]; then
   PROPS="${PROPS},spark.dynamicAllocation.maxExecutors=${DATAPROC_MAX_EXECUTORS}"
@@ -69,6 +70,7 @@ fi
 
 echo "==> Submitting ${SCRIPT} to Dataproc Serverless"
 echo "    project=${PROJECT}  region=${REGION}  version=${RUNTIME_VERSION}  ttl=${TTL}"
+echo "    image=${IMAGE}"
 
 gcloud dataproc batches submit pyspark "$SCRIPT" \
   --project="$PROJECT" \
@@ -76,7 +78,9 @@ gcloud dataproc batches submit pyspark "$SCRIPT" \
   --version="$RUNTIME_VERSION" \
   --ttl="$TTL" \
   --service-account="$SA" \
+  --container-image="$IMAGE" \
   --deps-bucket="${DEPS_GCS%/*}" \
-  --py-files="${DEPS_GCS}/spark_jobs.zip,${DEPS_GCS}/pypackages.zip" \
+  --py-files="${DEPS_GCS}/spark_jobs.zip" \
+  --files="config.yml,config/storage.yml" \
   --properties="$PROPS" \
   -- "$@"
