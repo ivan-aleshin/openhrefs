@@ -177,9 +177,9 @@ Output: Parquet at `<RAW_PATH>/cc_domain_languages/` — schema `(domain STRING,
 
 ### Stage 2 — PageRank
 
-Reads Host Graph vertices and edges. Runs power-iteration PageRank over the **full global graph** — input is *not* filtered by user scope. Global context is required for accurate scoring, and the global metrics are what gets published as `open-domain-authority-index` (§11). Scope-derived filters (`min_referring_domains`, `min_pagerank`) are applied to the *output* as post-metric filters on the carry-forward domain set.
+Reads the domain-level link graph (vertices and edges derived from the CommonCrawl Host Graph, collapsed host→domain). Runs power-iteration PageRank over the **full global graph** — input is *not* filtered by user scope. Global context is required for accurate scoring, and the global metrics are what gets published as `open-domain-authority-index` (§11). Scope-derived filters (`min_referring_domains`, `min_pagerank`) are applied to the *output* as post-metric filters on the carry-forward domain set.
 
-**Algorithm:** standard PageRank with damping factor `d = 0.85`. Convergence criterion: `Σ|PR_new - PR_old| < tol` where `tol = 0.001`. Typically converges in 10–20 iterations on domain-level graphs.
+**Algorithm:** standard PageRank with damping factor `d = 0.85`. Convergence criterion: `Σ|PR_new - PR_old| < tol` where `tol = 0.001`. Typically converges in 10–20 iterations on domain-level graphs. Dangling domains (no out-links) redistribute their mass uniformly across all domains each iteration, preserving total mass = 1.
 
 **Validation:** Spearman correlation with OpenPageRank on overlapping domains.
 
@@ -187,7 +187,7 @@ Output: Parquet at `<RAW_PATH>/cc_domain_pagerank/` — schema `(domain STRING, 
 
 ### Stage 3 — open_authority
 
-**Personalized PageRank** with teleportation concentrated on a seed set instead of uniform distribution. Like Stage 2, runs on the **full global Host Graph** — input is not filtered by user scope.
+**Personalized PageRank** with teleportation concentrated on a seed set instead of uniform distribution. Like Stage 2, runs on the **full global domain-level graph** — input is not filtered by user scope.
 
 **Seed set:** top-N domains from composite-domain-rating, ranked by consensus percentile score.
 
@@ -202,11 +202,13 @@ rank 1000:   0.100
 rank 10000:  0.075
 ```
 
-**Formula:**
+**Formula** (per iteration, mass-conserving):
 ```
-OA(v) = (1 - d) * w_norm(v) + d * Σ_u [ OA(u) / OutDeg(u) ]
+OA(v) = (1 - d) * w_norm(v)
+      + d * Σ_u [ OA(u) / OutDeg(u) ]
+      + d * D * w_norm(v)
 ```
-where `w_norm(v) = 0` for non-seed domains. Optimal `d` and seed-set size N determined by Experiment 4 (see Section 8).
+where `w_norm(v) = 0` for non-seed domains, and `D = Σ_{dangling u} OA(u)` is the total mass on dangling domains (no out-links), routed back to the seed via the personalization vector rather than spread uniformly. This keeps `Σ OA = 1` and concentrates both teleport and dangling mass on the seed. Optimal `d` and seed-set size N determined by Experiment 4 (see Section 8).
 
 **open_volume**: log-scaled in-degree, reflecting link quantity independent of quality.
 
