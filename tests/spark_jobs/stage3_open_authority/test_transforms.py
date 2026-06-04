@@ -94,9 +94,16 @@ def test_weight_from_consensus_rejects_empty_seed(spark: SparkSession) -> None:
         weight_from_consensus(df, "log_rank", 10)
 
 
-def test_weight_from_consensus_rejects_null_consensus(spark: SparkSession) -> None:
+def test_weight_from_consensus_drops_null_consensus(spark: SparkSession) -> None:
+    # null consensus = unranked (sparse c-d-r rows); dropped as a non-candidate, not fatal.
     df = spark.createDataFrame([("a.com", 0.9), ("b.org", None)], _NULLABLE_SEED)
-    with pytest.raises(DataSourceError, match="consensus"):
+    domains = {r["domain"] for r in weight_from_consensus(df, "log_rank", 10).collect()}
+    assert domains == {"a.com"}
+
+
+def test_weight_from_consensus_rejects_all_null_consensus(spark: SparkSession) -> None:
+    df = spark.createDataFrame([("a.com", None), ("b.org", None)], _NULLABLE_SEED)
+    with pytest.raises(DataSourceError, match="empty"):
         weight_from_consensus(df, "log_rank", 10)
 
 

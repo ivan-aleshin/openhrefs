@@ -21,20 +21,23 @@ _WEIGHTS = {"log_rank", "sqrt_rank", "uniform", "score"}
 def weight_from_consensus(consensus: DataFrame, weight: str, seed_size: int) -> DataFrame:
     """``(domain, consensus)`` → ``(domain, w)`` for the top-``seed_size`` domains.
 
-    Duplicate domains are collapsed to their max consensus before ranking. Rank is by
-    consensus descending, domain ascending (deterministic tiebreak), then the top
-    ``seed_size`` are weighted by ``weight``. A ``score`` weight whose surviving values
-    are all non-positive is rejected (an all-zero teleport vector is meaningless).
+    Rows with a null consensus are unranked non-candidates (the full composite-DR export
+    carries ~millions of sparse no-score rows) and are dropped before ranking. Duplicate
+    domains are collapsed to their max consensus. Rank is by consensus descending, domain
+    ascending (deterministic tiebreak), then the top ``seed_size`` are weighted by
+    ``weight``. A ``score`` weight whose surviving values are all non-positive is rejected
+    (an all-zero teleport vector is meaningless).
 
     Raises:
         ValueError: if ``weight`` is not a known formula.
-        DataSourceError: if the seed is empty, has a null/blank domain or a
-            null/NaN/negative consensus, or the ``score`` weighting yields no positive weight.
+        DataSourceError: if no ranked candidate survives, a candidate has a null/blank
+            domain or a NaN/negative consensus, or ``score`` weighting yields no positive weight.
     """
     if weight not in _WEIGHTS:
         raise ValueError(f"unknown seed weight formula: {weight}")
-    _validate_seed(consensus)
-    collapsed = consensus.groupBy("domain").agg(F.max("consensus").alias("consensus"))
+    candidates = consensus.where(F.col("consensus").isNotNull())
+    _validate_seed(candidates)
+    collapsed = candidates.groupBy("domain").agg(F.max("consensus").alias("consensus"))
     ranked = collapsed.withColumn(
         "rank",
         F.row_number().over(Window.orderBy(F.col("consensus").desc(), F.col("domain").asc())),
@@ -47,32 +50,30 @@ def weight_from_consensus(consensus: DataFrame, weight: str, seed_size: int) -> 
     return weighted
 
 
-def _validate_seed(consensus: DataFrame) -> None:
-    """Reject malformed seed rows before ranking; raise ``DataSourceError`` on violation.
+def _validate_seed(candidates: DataFrame) -> None:
+    """Reject a malformed candidate set before ranking; raise ``DataSourceError`` on violation.
 
-    A bad row (null/blank domain, null/NaN/negative consensus) read from the external
-    seed must not silently receive a teleport weight or reach the paid power iteration.
+    Runs on the ranked candidates (null consensus already dropped upstream). A candidate
+    with a null/blank domain or a NaN/negative consensus signals a corrupt seed, not just
+    an absent score, and must not receive a teleport weight or reach the paid iteration.
+    An empty candidate set (e.g. every row unranked) is fatal too.
     """
-    chk = consensus.agg(
+    chk = candidates.agg(
         F.count("*").alias("rows"),
         F.sum(
             F.when(F.col("domain").isNull() | (F.trim(F.col("domain")) == ""), 1).otherwise(0)
         ).alias("bad_domain"),
-        F.sum(
-            F.when(
-                F.col("consensus").isNull() | F.isnan("consensus") | (F.col("consensus") < 0), 1
-            ).otherwise(0)
-        ).alias("bad_consensus"),
+        F.sum(F.when(F.isnan("consensus") | (F.col("consensus") < 0), 1).otherwise(0)).alias(
+            "bad_consensus"
+        ),
     ).first()
     assert chk is not None
     if chk["rows"] == 0:
-        raise DataSourceError("seed is empty")
+        raise DataSourceError("seed is empty (no ranked candidates)")
     if chk["bad_domain"]:
         raise DataSourceError(f"seed has {chk['bad_domain']} rows with a null/blank domain")
     if chk["bad_consensus"]:
-        raise DataSourceError(
-            f"seed has {chk['bad_consensus']} rows with a null/NaN/negative consensus"
-        )
+        raise DataSourceError(f"seed has {chk['bad_consensus']} rows with a NaN/negative consensus")
 
 
 def _weight_expr(weight: str) -> Column:
