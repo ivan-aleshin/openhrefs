@@ -8,15 +8,16 @@
             ) }}
         {%- endif -%}
         {%- do run_query('create database if not exists raw_cc') -%}
-        {%- do run_query('drop table if exists raw_cc.cc_domain_authority') -%}
-        {%- do run_query(
-            "create table raw_cc.cc_domain_authority"
-            ~ " using parquet location '" ~ raw_path ~ "/cc_domain_authority'"
-        ) -%}
-        {%- do run_query('drop table if exists raw_cc.cc_domain_pagerank') -%}
-        {%- do run_query(
-            "create table raw_cc.cc_domain_pagerank"
-            ~ " using parquet location '" ~ raw_path ~ "/cc_domain_pagerank'"
-        ) -%}
+        {%- for tbl in ['cc_domain_authority', 'cc_domain_pagerank'] -%}
+            {%- do run_query('drop table if exists raw_cc.' ~ tbl) -%}
+            {%- do run_query(
+                "create table raw_cc." ~ tbl
+                ~ " using parquet location '" ~ raw_path ~ "/" ~ tbl ~ "'"
+            ) -%}
+            {#- stage outputs are partitioned by crawl (crawl=.../*.parquet); a freshly
+                created parquet table does not surface partitions until they are recovered,
+                so without this the prod source reads empty. -#}
+            {%- do run_query('msck repair table raw_cc.' ~ tbl) -%}
+        {%- endfor -%}
     {%- endif -%}
 {% endmacro %}

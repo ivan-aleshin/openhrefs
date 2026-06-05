@@ -35,3 +35,19 @@ crawl_window:
 # but listed explicitly so language outputs are stable if scope narrows.
 languages:
   targets: [bul, ron]
+
+# Calibrated PageRank / open_authority parameters (SPEC.md §5). Production stages
+# read these from config; experiments document why each value holds. Operational
+# tuning (edge partitions, checkpoint cadence, Dataproc TTL) is a submission concern
+# and stays on the job CLI / submit script, not here.
+authority:
+  damping: 0.85       # chain-follow probability d (Exp 4 calibration)
+  tol: 0.001          # convergence threshold on the L1 delta between iterations
+  max_iter: 30        # iteration cap; convergence observed ~10-15 on domain graphs
+
+# composite-DR seed set for Stage 3 open_authority (personalized PageRank).
+# Production-validated mode is top-10K + log_rank + damping 0.85 (Exp 4); the other
+# weights are deliberate override modes, not equally calibrated.
+seed:
+  size: 10000         # top-N consensus domains used as the teleport seed
+  weight: log_rank    # log_rank | sqrt_rank | uniform | score
