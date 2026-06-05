@@ -57,6 +57,32 @@ def test_missing_storage_file_raises_config_error(tmp_path) -> None:  # type: ig
         load_storage(Settings(openhrefs_env="local"), storage_file=tmp_path / "absent.yml")
 
 
+def test_default_config_resolves_cwd_local_files(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # Simulate packaged execution: cwd holds the Spark --files landing (config.yml,
+    # storage.yml by basename), not a repo checkout. Defaults must find them.
+    (tmp_path / "config.yml").write_text("scope:\n  all_of:\n    - language: [bul]\n")
+    (tmp_path / "storage.yml").write_text(
+        "gcp:\n"
+        "  raw_path: gs://b/raw\n"
+        "  marts_path: gs://b/marts\n"
+        "  host_graph_path: gs://commoncrawl/x\n"
+        "  cdx_path: gs://commoncrawl/cdx\n"
+        "  wat_path: gs://commoncrawl/wat\n"
+    )
+    monkeypatch.chdir(tmp_path)
+    assert "all_of" in load_pipeline_config().scope
+    assert load_storage(Settings(openhrefs_env="gcp")).raw_path == "gs://b/raw"
+
+
+def test_default_config_missing_everywhere_raises_clear_error(tmp_path: Path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    # An empty cwd with no repo-root checkout: the default must fail with a clear error,
+    # naming the file it looked for, not an opaque traceback.
+    monkeypatch.setattr("spark_jobs.common.config._CONFIG_CANDIDATES", (tmp_path / "config.yml",))
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(ConfigError, match="config file not found"):
+        load_pipeline_config()
+
+
 def test_pipeline_config_loads_scope_window_and_languages() -> None:
     config = load_pipeline_config()
     assert "all_of" in config.scope

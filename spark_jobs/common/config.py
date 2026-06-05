@@ -1,7 +1,14 @@
 """Configuration loading: environment settings, storage paths, pipeline config.
 
 Pure Python (YAML + pydantic) with no Spark dependency, so it is unit-testable
-without a JVM. Config files are resolved relative to the repository root.
+without a JVM.
+
+Default config files are resolved **cwd-first, then repository root**. On Dataproc the
+code runs from inside ``spark_jobs.zip`` (so a repo-root path derived from ``__file__``
+points into the zip, not at the shipped files), while ``submit_job.sh`` ships ``config.yml``
+and ``config/storage.yml`` via ``--files`` — which land in the driver cwd by basename
+(``./config.yml``, ``./storage.yml``). Checking cwd first makes the default path contract
+work both locally (run from repo root) and under packaged execution.
 """
 
 from __future__ import annotations
@@ -16,8 +23,23 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from spark_jobs.common.errors import ConfigError
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_DEFAULT_CONFIG = _REPO_ROOT / "config.yml"
-_DEFAULT_STORAGE = _REPO_ROOT / "config" / "storage.yml"
+# Candidate default locations, in priority order: the Spark ``--files`` cwd landing
+# (basename) first, then a repo-root checkout. The last entry is the fall-through used
+# in the "not found" error when nothing exists.
+_CONFIG_CANDIDATES = (Path("config.yml"), _REPO_ROOT / "config.yml")
+_STORAGE_CANDIDATES = (
+    Path("storage.yml"),
+    Path("config") / "storage.yml",
+    _REPO_ROOT / "config" / "storage.yml",
+)
+
+
+def _first_existing(candidates: tuple[Path, ...]) -> Path:
+    """First existing candidate, else the last one (so the caller raises a clear error)."""
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return candidates[-1]
 
 
 class _StrictModel(BaseModel):
@@ -125,11 +147,11 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 def load_storage(
     settings: Settings | None = None,
-    storage_file: Path = _DEFAULT_STORAGE,
+    storage_file: Path | None = None,
 ) -> StoragePaths:
     """Resolve storage paths for the active environment, applying env overrides."""
     settings = settings or Settings()
-    envs = _read_yaml(storage_file)
+    envs = _read_yaml(storage_file or _first_existing(_STORAGE_CANDIDATES))
     env_block = envs.get(settings.openhrefs_env)
     if not isinstance(env_block, dict):
         raise ConfigError(
@@ -146,8 +168,9 @@ def load_storage(
     return paths
 
 
-def load_pipeline_config(config_file: Path = _DEFAULT_CONFIG) -> PipelineConfig:
+def load_pipeline_config(config_file: Path | None = None) -> PipelineConfig:
     """Load and validate ``config.yml``."""
+    config_file = config_file or _first_existing(_CONFIG_CANDIDATES)
     try:
         return PipelineConfig(**_read_yaml(config_file))
     except ValidationError as exc:

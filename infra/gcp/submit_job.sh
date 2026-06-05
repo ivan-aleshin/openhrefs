@@ -7,11 +7,15 @@
 #   ./infra/gcp/submit_job.sh spark_jobs/hello/main.py \
 #     --cdx-path "gs://.../CC-MAIN-2024-51/indexes/cdx-00000.gz"
 #
-# Iterative job (Stage 2/3) — size the run via env vars, use a GCS checkpoint dir:
+# Iterative job (Stage 2/3) — size the run via env vars, use a GCS checkpoint dir.
+# Pass --output-path explicitly: the driver env carries no OPENHREFS_ENV/RAW_PATH, so the
+# load_storage default falls back to the local block (tests/fixtures), which the output
+# guard rejects. config.yml ships via --files and resolves from cwd (no --config needed).
 #   DATAPROC_TTL=6h DATAPROC_MAX_EXECUTORS=50 DATAPROC_SHUFFLE_PARTITIONS=2000 \
 #   ./infra/gcp/submit_job.sh spark_jobs/stage2_pagerank/main.py \
 #     --edges-path gs://.../staged/v3_edges --vertices-path gs://.../staged/v3_map \
-#     --crawl cc-main-2026-mar-apr-may --checkpoint-dir gs://.../checkpoints/stage2
+#     --crawl cc-main-2026-mar-apr-may --checkpoint-dir gs://.../checkpoints/stage2 \
+#     --output-path gs://.../raw/cc_domain_pagerank
 #
 # Dependencies ship in a custom container image (built by build_image.sh); only
 # project code rides --py-files. Set DATAPROC_IMAGE to an explicit versioned tag.
