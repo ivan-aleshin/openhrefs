@@ -82,5 +82,20 @@ def test_validate_graph_rejects_null_domain(spark: SparkSession) -> None:
         ]
     )
     verts = spark.createDataFrame([(0, "a"), (1, None), (2, "c")], nullable_verts)
-    with pytest.raises(DataSourceError, match="null domain"):
+    with pytest.raises(DataSourceError, match="null/blank domain"):
+        validate_graph(verts, _edges(spark, [(0, 1)]), n=3)
+
+
+def test_validate_graph_rejects_blank_domain(spark: SparkSession) -> None:
+    # A null rev_domain becomes "" through concat_ws, not null — the blank must be rejected.
+    verts = _verts(spark, [(0, "a"), (1, "  "), (2, "c")])
+    with pytest.raises(DataSourceError, match="null/blank domain"):
+        validate_graph(verts, _edges(spark, [(0, 1)]), n=3)
+
+
+def test_validate_graph_rejects_duplicate_identical_vertex_rows(spark: SparkSession) -> None:
+    # distinct(id)==3, dense min/max, distinct(domain)==3 — passes every check except the
+    # row count. Without it the duplicate id=0 double-counts in power_iteration.
+    verts = _verts(spark, [(0, "a"), (0, "a"), (1, "b"), (2, "c")])
+    with pytest.raises(DataSourceError, match="duplicate id rows"):
         validate_graph(verts, _edges(spark, [(0, 1)]), n=3)

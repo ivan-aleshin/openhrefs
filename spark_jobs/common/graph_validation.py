@@ -9,7 +9,7 @@ wrong PageRank, leaking mass, or emitting a null-domain row.
 
 from __future__ import annotations
 
-from pyspark.sql import DataFrame
+from pyspark.sql import Column, DataFrame
 from pyspark.sql import functions as F
 
 from spark_jobs.common.errors import DataSourceError
@@ -26,13 +26,19 @@ def validate_graph(vertices: DataFrame, edges: DataFrame, n: int) -> None:
     validate_edges(edges, n)
 
 
+def _is_blank(col: Column) -> Column:
+    """True when a string column is null or trims to empty."""
+    return col.isNull() | (F.trim(col) == "")
+
+
 def validate_vertices(vertices: DataFrame, n: int) -> None:
-    """Validate vertices are dense ``[0, n)`` with non-null, unique domains."""
+    """Validate vertices are dense ``[0, n)`` with unique ids and non-blank, unique domains."""
     v = vertices.agg(
+        F.count(F.lit(1)).alias("rows"),
         F.countDistinct("id").alias("distinct"),
         F.min("id").alias("min"),
         F.max("id").alias("max"),
-        F.sum(F.when(F.col("domain").isNull(), 1).otherwise(0)).alias("null_domain"),
+        F.sum(F.when(_is_blank(F.col("domain")), 1).otherwise(0)).alias("blank_domain"),
         F.countDistinct("domain").alias("distinct_domain"),
     ).first()
     assert v is not None
@@ -41,8 +47,12 @@ def validate_vertices(vertices: DataFrame, n: int) -> None:
             f"vertices are not dense [0, {n}): distinct={v['distinct']} "
             f"min={v['min']} max={v['max']}"
         )
-    if v["null_domain"]:
-        raise DataSourceError(f"vertex map has {v['null_domain']} rows with a null domain")
+    # distinct(id)==n alone is satisfied by duplicate identical rows; the row count closes
+    # that hole, else power_iteration double-counts the duplicated id's rank and leaks mass.
+    if v["rows"] != n:
+        raise DataSourceError(f"vertex map has {v['rows']} rows for {n} ids — duplicate id rows")
+    if v["blank_domain"]:
+        raise DataSourceError(f"vertex map has {v['blank_domain']} rows with a null/blank domain")
     if v["distinct_domain"] != n:
         raise DataSourceError(
             f"vertex map domains are not unique: {v['distinct_domain']} distinct for {n} ids"
