@@ -5,9 +5,9 @@ SPEC §3), teleporting onto the top-N composite-DR consensus seed, and writes
 ``cc_domain_authority`` (open_authority + log-scaled open_volume).
 
 Expected data volume (crawl ``cc-main-2026-mar-apr-may``): 118.76M domain vertices,
-4.3B edges. Last measured Dataproc Serverless cost (Exp 4.3 personalized-PR pilot, same
-graph + top-10K seed): ~$1.5 / run — converged at iteration 8, ~47 min, final mass
-1.000000 (23.4 DCU-hr, us-central1, 2026-05-31).
+4.3B edges. Last measured Dataproc Serverless cost (prod run, batch ``cfd8b53a``, full
+3.32M-row composite-DR export → top-10K seed): ~$2.3 / run — converged at iteration 8,
+~74 min wall, final mass 1.0000000000 (36.2 DCU-hr, us-central1, 2026-06-04).
 
 Operational (Exp 2): set an explicit Dataproc batch ``--ttl`` at submit time.
 """

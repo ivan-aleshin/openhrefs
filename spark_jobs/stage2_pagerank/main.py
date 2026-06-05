@@ -5,9 +5,10 @@ on the **full global graph** (input is never scope-filtered — SPEC.md §3), an
 writes ``cc_domain_pagerank`` Parquet. Personalized ``open_authority`` is Stage 3.
 
 Expected data volume (crawl ``cc-main-2026-mar-apr-may``): 118.76M domain vertices,
-4.3B edges. Last measured Dataproc Serverless cost (Exp 4.1 global PageRank, same
-graph): ~$1.9 / run — converged at iteration 10, ~56 min wall, final mass 1.000000
-(28.8 DCU-hr + shuffle, us-central1, 2026-05-30).
+4.3B edges. Last measured Dataproc Serverless cost (prod run, batch ``7237955b``):
+~$2.5 / run — converged at iteration 10, ~90 min wall, final mass 1.0000000000005
+(39.3 DCU-hr, us-central1, 2026-06-04). The wall delta vs Exp 4.1's 56 min is the
+upfront full-graph validation scan.
 
 Operational (Exp 2): set an explicit Dataproc batch ``--ttl`` at submit time — the
 default 4h TTL silently cancels long iterative jobs. Periodic Parquet rank snapshots
