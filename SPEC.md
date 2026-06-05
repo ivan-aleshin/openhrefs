@@ -1,6 +1,6 @@
 # openhrefs — Technical Specification
 
-> **Status.** This document specifies the *intended* system. Implementation is in **Phase 0** (initial setup) — see `README.md` for current status. Sections describing pipeline behavior, marts, and publishing should be read as the target contract, not a description of currently working features. Future public contract changes are reflected in this document.
+> **Status.** This document specifies the *intended* system. Implementation is in **Phase 2** (authority pipeline) — see `README.md` for current status. Sections describing pipeline behavior, marts, and publishing should be read as the target contract, not a description of currently working features. Future public contract changes are reflected in this document.
 
 ## 1. Product Overview
 
@@ -181,7 +181,7 @@ Reads the domain-level link graph (vertices and edges derived from the CommonCra
 
 **Algorithm:** standard PageRank with damping factor `d = 0.85`. Convergence criterion: `Σ|PR_new - PR_old| < tol` where `tol = 0.001`. Typically converges in 10–20 iterations on domain-level graphs. Dangling domains (no out-links) redistribute their mass uniformly across all domains each iteration, preserving total mass = 1.
 
-**Validation:** Spearman correlation with OpenPageRank on overlapping domains.
+**Validation:** rank-agreement profile against OpenPageRank on overlapping domains — Spearman, Kendall τ-b, RBO, and top-k Jaccard across head/tail rank buckets. A sanity gate that the engine reproduces an established public reference, not a single correlation to maximize.
 
 Output: Parquet at `<RAW_PATH>/cc_domain_pagerank/` — schema `(domain STRING, crawl STRING, pagerank_score DOUBLE, in_degree BIGINT, out_degree BIGINT)`. Partitioning: `crawl`.
 
