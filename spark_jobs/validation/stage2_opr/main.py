@@ -3,8 +3,9 @@
 Joins the Stage 2 ``cc_domain_pagerank`` output with the OpenPageRank reference and
 writes the small per-crawl overlap Parquet ``(domain, our_pr, opr_score)``, then logs
 full-output stats (count, mass sum, range, nulls) and the overlap row count. Rank
-metrics (Spearman, Kendall, RBO) are computed off-cluster on the overlap — they pull
-in scipy/numpy, which stay out of the Serverless runtime image.
+metrics (Spearman, Kendall, RBO) are computed off-cluster from the overlap by
+``tools.validation.opr_rank_metrics`` — they pull in scipy/numpy, which stay out of the
+Serverless runtime image.
 
 Cost: a single join + one full scan of ``cc_domain_pagerank`` (118.76M rows for
 ``cc-main-2026-mar-apr-may``); ~$0.2 / run, no power iteration.
