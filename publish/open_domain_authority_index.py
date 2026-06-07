@@ -57,6 +57,14 @@ class PublishArtifacts:
     metadata: dict
 
 
+@dataclass
+class _MartQuery:
+    """A DuckDB connection paired with the mart read-relation it queries."""
+
+    con: duckdb.DuckDBPyConnection
+    rel: str
+
+
 def _sql_str(value: str) -> str:
     """Escape a string for safe inlining into a DuckDB SQL literal."""
     return value.replace("'", "''")
@@ -73,6 +81,42 @@ def _source_commit() -> str | None:
         return out.stdout.strip() or None
     except (subprocess.CalledProcessError, FileNotFoundError):
         return None
+
+
+def _read_window_state(q: _MartQuery) -> tuple[int, list[str]]:
+    """Return the mart's total row count and its distinct window_ids (sorted)."""
+    source_row_count = q.con.sql(f"select count(*) from {q.rel}").fetchone()[0]
+    available = [
+        r[0]
+        for r in q.con.sql(f"select distinct window_id from {q.rel} order by window_id").fetchall()
+    ]
+    return source_row_count, available
+
+
+def _write_published_files(
+    q: _MartQuery, where: str, out: Path, top_n: int
+) -> tuple[Path, Path, int]:
+    """Write the published Parquet (no rank) and the top-N CSV (with rank)."""
+    cols = ", ".join(_PUBLISHED_COLUMNS)
+    parquet_path = out / f"{_DATASET_NAME}.parquet"
+    q.con.sql(f"select {cols} from {q.rel} {where}").write_parquet(str(parquet_path))
+
+    csv_path = out / f"{_DATASET_NAME}-top-{top_n}.csv"
+    q.con.sql(
+        f"select row_number() over (order by open_authority desc, domain asc) as rank, "
+        f"{cols} from {q.rel} {where} "
+        f"order by open_authority desc, domain asc limit {top_n}"
+    ).write_csv(str(csv_path), header=True)
+
+    row_count = q.con.sql(f"select count(*) from {q.rel} {where}").fetchone()[0]
+    return parquet_path, csv_path, row_count
+
+
+def _write_metadata(out: Path, metadata: dict) -> Path:
+    """Write metadata.json into out and return its path."""
+    metadata_path = out / "metadata.json"
+    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
+    return metadata_path
 
 
 def extract_public_index(
@@ -93,29 +137,13 @@ def extract_public_index(
         raise PublishError(f"top_n must be positive, got {top_n}")
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    cols = ", ".join(_PUBLISHED_COLUMNS)
     con = duckdb.connect()
     try:
-        rel = f"read_parquet('{_sql_str(str(mart_path))}')"
-        source_row_count = con.sql(f"select count(*) from {rel}").fetchone()[0]
-        available = [
-            r[0]
-            for r in con.sql(f"select distinct window_id from {rel} order by window_id").fetchall()
-        ]
+        q = _MartQuery(con, f"read_parquet('{_sql_str(str(mart_path))}')")
+        source_row_count, available = _read_window_state(q)
         selected = _resolve_window(window_id, available)
         where = f"where window_id = '{_sql_str(selected)}'"
-
-        parquet_path = out / f"{_DATASET_NAME}.parquet"
-        con.sql(f"select {cols} from {rel} {where}").write_parquet(str(parquet_path))
-
-        csv_path = out / f"{_DATASET_NAME}-top-{top_n}.csv"
-        con.sql(
-            f"select row_number() over (order by open_authority desc, domain asc) as rank, "
-            f"{cols} from {rel} {where} "
-            f"order by open_authority desc, domain asc limit {top_n}"
-        ).write_csv(str(csv_path), header=True)
-
-        row_count = con.sql(f"select count(*) from {rel} {where}").fetchone()[0]
+        parquet_path, csv_path, row_count = _write_published_files(q, where, out, top_n)
     finally:
         con.close()
 
@@ -130,8 +158,7 @@ def extract_public_index(
         "source_mart_path": str(mart_path),
         "source_commit": _source_commit(),
     }
-    metadata_path = out / "metadata.json"
-    metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
+    metadata_path = _write_metadata(out, metadata)
     return PublishArtifacts(parquet_path, csv_path, metadata_path, metadata)
 
 
