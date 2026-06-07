@@ -133,3 +133,143 @@ def extract_public_index(
     metadata_path = out / "metadata.json"
     metadata_path.write_text(json.dumps(metadata, indent=2) + "\n")
     return PublishArtifacts(parquet_path, csv_path, metadata_path, metadata)
+
+
+def build_dataset_card(metadata: dict, repo_id: str) -> str:
+    """Hugging Face dataset card (README.md) with license and source terms."""
+    return f"""---
+license: other
+tags:
+- domain-authority
+- common-crawl
+- pagerank
+---
+
+# open-domain-authority-index
+
+Domain-level authority metrics over the **global** Common Crawl link graph,
+produced by the [openhrefs]({_REPO_URL}) pipeline. Columns: `domain`,
+`open_authority`, `open_volume`, `window_id`.
+
+**Best-effort snapshot, not a maintained service.** This is an on-demand
+byproduct of the openhrefs pipeline, provided **as-is**. Run the pipeline
+yourself for current or custom data.
+
+## Source terms
+
+Derived from [Common Crawl](https://commoncrawl.org/) and
+[composite-domain-rating](https://github.com/ivan-aleshin/composite-domain-rating).
+Source terms apply; you are responsible for compliance with the upstream data
+licenses. Published under `license: other` for that reason.
+
+## Usage
+
+```python
+from datasets import load_dataset
+
+ds = load_dataset("{repo_id}")  # one-off snapshot; not regularly updated
+```
+
+Snapshot window `{metadata["window_id"]}` · {metadata["row_count"]} rows ·
+generated {metadata["generated_at_utc"]}.
+"""
+
+
+def push_hf(artifacts: PublishArtifacts, repo_id: str, *, dry_run: bool = False) -> None:
+    """Upload the Parquet + dataset card to a Hugging Face dataset repo.
+
+    Idempotent: the repo is created if missing (exist_ok), uploads overwrite.
+    HF_TOKEN is read from the environment by huggingface_hub.
+    """
+    card = build_dataset_card(artifacts.metadata, repo_id)
+    if dry_run:
+        log.info("hf.push.dry_run", repo_id=repo_id, parquet=artifacts.parquet_path.name)
+        return
+    from huggingface_hub import HfApi, create_repo
+
+    create_repo(repo_id, repo_type="dataset", exist_ok=True)
+    api = HfApi()
+    api.upload_file(
+        path_or_fileobj=str(artifacts.parquet_path),
+        path_in_repo=artifacts.parquet_path.name,
+        repo_id=repo_id,
+        repo_type="dataset",
+    )
+    api.upload_file(
+        path_or_fileobj=card.encode(),
+        path_in_repo="README.md",
+        repo_id=repo_id,
+        repo_type="dataset",
+    )
+    log.info("hf.push.done", repo_id=repo_id, parquet=artifacts.parquet_path.name)
+
+
+def push_github_release(
+    artifacts: PublishArtifacts, tag: str, title: str, *, dry_run: bool = False
+) -> None:
+    """Publish the top-N CSV as a GitHub Release asset via the gh CLI.
+
+    Idempotent: creates the release if missing, then uploads with --clobber so
+    a rerun overwrites the existing asset.
+    """
+    create = [
+        "gh",
+        "release",
+        "create",
+        tag,
+        "--title",
+        title,
+        "--notes",
+        f"{_DATASET_NAME} snapshot (window {artifacts.metadata['window_id']})",
+    ]
+    upload = ["gh", "release", "upload", tag, str(artifacts.csv_path), "--clobber"]
+    if dry_run:
+        log.info("github.release.dry_run", create=" ".join(create), upload=" ".join(upload))
+        return
+    exists = subprocess.run(["gh", "release", "view", tag], capture_output=True).returncode == 0
+    if not exists:
+        subprocess.run(create, check=True)
+    subprocess.run(upload, check=True)
+    log.info("github.release.done", tag=tag, asset=artifacts.csv_path.name)
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mart-path", required=True, help="Path to mart_domain_authority Parquet")
+    parser.add_argument("--output-dir", default="build/publish", help="Local staging dir")
+    parser.add_argument("--top-n", type=int, default=100_000, help="Rows in the top-N CSV")
+    parser.add_argument("--window-id", default=None, help="Crawl window to publish")
+    parser.add_argument("--hf-repo-id", default=None, help="Hugging Face dataset repo id")
+    parser.add_argument("--github-tag", default=None, help="GitHub Release tag")
+    parser.add_argument("--push-hf", action="store_true", help="Upload to Hugging Face")
+    parser.add_argument("--push-github", action="store_true", help="Publish GitHub Release")
+    parser.add_argument("--dry-run", action="store_true", help="Skip network calls")
+    args = parser.parse_args(argv)
+
+    artifacts = extract_public_index(
+        args.mart_path, args.output_dir, top_n=args.top_n, window_id=args.window_id
+    )
+    log.info(
+        "extract.done",
+        rows=artifacts.metadata["row_count"],
+        window_id=artifacts.metadata["window_id"],
+        parquet=str(artifacts.parquet_path),
+    )
+
+    if args.push_hf:
+        if not args.hf_repo_id:
+            raise PublishError("--push-hf requires --hf-repo-id")
+        push_hf(artifacts, args.hf_repo_id, dry_run=args.dry_run)
+    if args.push_github:
+        if not args.github_tag:
+            raise PublishError("--push-github requires --github-tag")
+        push_github_release(
+            artifacts,
+            args.github_tag,
+            f"{_DATASET_NAME} {artifacts.metadata['window_id']}",
+            dry_run=args.dry_run,
+        )
+
+
+if __name__ == "__main__":
+    main()
