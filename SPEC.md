@@ -6,14 +6,14 @@
 
 **openhrefs is a data pipeline.** Users clone the repository, configure a scope of domains (by language, TLD, authority threshold, or any combination), run the pipeline on their own infrastructure, and produce their own domain authority and backlink index from [CommonCrawl](https://commoncrawl.org/) data. The pipeline is the primary product — a transparent, reproducible alternative to commercial tools such as Majestic and Ahrefs.
 
-Alongside the pipeline, openhrefs publishes one free public dataset — **`open-domain-authority-index`** — containing domain-level authority metrics (`open_authority`, `open_volume`) computed over the **global** CommonCrawl link graph, before any scope filtering. It is a lightweight byproduct intended for users who need authority scores for arbitrary domains and do not want to run the pipeline themselves. Full marts (link-level, scope-specific) are not published; users who need them run the pipeline. See §11 for publication details.
+Alongside the pipeline, openhrefs may publish a free public dataset — **`open-domain-authority-index`** — containing domain-level authority metrics (`open_authority`, `open_volume`) computed over the **global** CommonCrawl link graph, before any scope filtering. It is an on-demand, best-effort snapshot — not a maintained service — reproducible by anyone who runs the pipeline. Full marts (link-level, scope-specific) are not published; users who need them run the pipeline. See §11 for publication details.
 
 ### Key properties
 
 - **Configurable per user**: scope is defined by language, TLD, authority threshold, or any combination. Any ISO 639-3 language or "all languages" is supported.
 - **Methodologically transparent**: PageRank and authority scoring use documented, reproducible algorithms. Seed sets are derived from the public [composite-domain-rating](https://github.com/ivan-aleshin/composite-domain-rating) project.
 - **Vendor-independent**: PySpark business logic contains no cloud-specific code. Storage paths and submission mechanisms are configurable per environment (GCP, AWS, local).
-- **Incrementally updated**: a sliding crawl window keeps the index current as CommonCrawl publishes new crawls (~monthly).
+- **Sliding crawl window**: the index methodology uses a rolling window of recent crawls, so a fresh pipeline run reflects current CommonCrawl data (~monthly cadence). Any published snapshot is best-effort, not a maintained feed.
 
 ---
 
@@ -154,11 +154,9 @@ GitHub Actions
               ├── dbt run (target=prod, dbt-spark adapter)
               │   Staging → Intermediate → Marts (all materialized as Parquet)
               │
-              └── Publish
-                  ├── GCS public bucket (canonical Parquet snapshot)
+              └── Publish (optional, best-effort snapshot)
                   ├── Hugging Face dataset update
-                  ├── GitHub Releases (CSV top-N summary)
-                  └── Optional: BigQuery public dataset (bq load from Parquet)
+                  └── GitHub Release (CSV top-N summary)
 ```
 
 All Spark jobs run on **Dataproc Serverless** — no cluster management, resources released on completion. Canonical storage is Parquet at every stage; warehouses are publication channels only (see §9 and §11).
@@ -446,7 +444,6 @@ Canonical storage is **Parquet on object storage** at every layer. No warehouse-
 | Raw (Spark stage outputs) | `<RAW_PATH>` | Parquet, partitioned by `crawl` | Written by Stage 1–4 jobs |
 | Marts (dbt outputs) | `<MARTS_PATH>` | Parquet via dbt-spark / dbt-duckdb | Canonical analytical layer |
 | Snapshots (SCD2) | `<MARTS_PATH>/_snapshots/` | Parquet (Spark) or DuckDB file (local) | Engine-native; small volume |
-| Published snapshots | GCS public bucket | Parquet (copy of marts) | Versioned per crawl window |
 
 `<RAW_PATH>` and `<MARTS_PATH>` resolve via env vars and `config/storage.yml`. For the GCP reference deployment: `gs://openhrefs-data/raw/` and `gs://openhrefs-data/marts/`. For local development: `file:///data/openhrefs/raw/` and `file:///data/openhrefs/marts/`. For AWS: `s3://openhrefs-data/...`.
 
@@ -466,7 +463,7 @@ Cost calibration and budget planning are deployment-specific. Narrow-scope refer
 
 ### Always-free / low-cost GCP services used
 
-Cloud Scheduler (3 jobs/month free), Cloud Monitoring (basic metrics), Looker Studio. BigQuery is *not* required by the pipeline — if used at all, it is an optional publication channel (§11) populated via `bq load` from the canonical Parquet.
+Cloud Scheduler (3 jobs/month free) and Cloud Monitoring (basic metrics). BigQuery and dashboard tools are not part of the reference deployment; users can load the canonical Parquet into them themselves if needed.
 
 ### Vendor independence
 
@@ -504,8 +501,8 @@ Cloud Scheduler: monthly cron
             → submit Dataproc Serverless jobs (Stage 1 → 2 → 3 → 4, sequential)
             → dbt run (recompute sliding window models)
             → export Parquet to GCS
-            → upload to Hugging Face
-            → publish GitHub Release (CSV summary)
+            → (optional, manual/best-effort) refresh the public snapshot:
+              upload to Hugging Face + publish a GitHub Release CSV summary
 ```
 
 Manual trigger available via `workflow_dispatch` for development and on-demand reprocessing.
@@ -516,16 +513,14 @@ Manual trigger available via `workflow_dispatch` for development and on-demand r
 
 Canonical output is Parquet on the configured marts path. Publication channels are independent fan-outs from that canonical store; enabling or disabling any channel does not touch the pipeline.
 
-The free public **`open-domain-authority-index`** dataset (`mart_domain_authority` computed over the *global* CommonCrawl link graph, before scope filtering) is the headline channel. Full marts (link-level, scope-specific) are not published — users who need them run the pipeline themselves.
+The public **`open-domain-authority-index`** dataset (`mart_domain_authority` computed over the *global* CommonCrawl link graph, before scope filtering) is an on-demand, best-effort snapshot. Full marts (link-level, scope-specific) are not published — users who need them run the pipeline themselves.
 
-| Channel | Content | Required? | Update frequency |
-|---|---|---|---|
-| GCS public bucket | Canonical Parquet snapshots per crawl | Default channel | Per crawl window |
-| Hugging Face Datasets | `open-domain-authority-index` + mart samples | Default | Per crawl window |
-| GitHub Releases | Top-N domain CSV summary | Default | Per crawl window |
-| dbt docs (GitHub Pages) | Schema documentation, lineage, tests | Default | Per crawl window |
-| BigQuery public dataset | `open-domain-authority-index` loaded via `bq load` | Optional | Per crawl window |
-| Looker Studio | Public dashboard (authority, language, trends) | Optional | Per crawl window |
+| Channel | Content | Update cadence |
+|---|---|---|
+| Hugging Face Datasets | `open-domain-authority-index` (published-columns Parquet) | Best-effort / on demand |
+| GitHub Releases | Top-N domain CSV summary | Best-effort / on demand |
+
+These are the only first-party channels, and both are best-effort snapshots, not maintained feeds. Any other channel — a BigQuery public dataset (`bq load`), a dashboard, a mirror — is reproducible by users directly from the canonical Parquet; openhrefs does not operate them.
 
 Publication scripts live under `publish/`. They run after the pipeline and read only from canonical Parquet — they do not modify any pipeline state.
 
@@ -589,20 +584,14 @@ openhrefs/
 │   ├── macros/
 │   │   └── cross_db/               # adapter.dispatch() portability macros
 │   └── seeds/
-├── publish/                        # canonical Parquet → publication channels
-│   ├── open_domain_authority_index.py
-│   ├── mart_samples.py
-│   ├── bq_load.py                  # optional: BQ public dataset
-│   ├── hf_push.py                  # Hugging Face Datasets
-│   └── github_release.py           # CSV summary for GitHub Releases
+├── publish/                        # canonical Parquet → public snapshot (manual)
+│   └── open_domain_authority_index.py  # extract subset → Hugging Face + GitHub Release
 ├── infra/
 │   ├── gcp/
 │   │   └── submit_job.sh           # Dataproc Serverless submission
 │   ├── aws/                        # vendor parity placeholder
-│   ├── monitoring/
-│   │   └── alerts.yml
-│   └── looker/
-│       └── dashboard.json
+│   └── monitoring/
+│       └── alerts.yml
 ├── tests/
 │   ├── conftest.py                 # shared SparkSession fixture
 │   ├── fixtures/

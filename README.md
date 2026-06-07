@@ -60,14 +60,13 @@ available to users who run the pipeline themselves.
 
 This is the lightweight alternative to running the pipeline yourself. If
 you need authority scores for an arbitrary set of domains but do not need
-URL-level backlink data, this is sufficient and free. Distributed via
-Parquet on GCS, Hugging Face Datasets, and a top-N CSV summary in GitHub
-Releases.
+URL-level backlink data, this is sufficient and free. Distributed as a
+full Parquet on Hugging Face Datasets and a top-N CSV summary in a GitHub
+Release.
 
-Publication cadence to be determined — depends on actual compute cost per
-refresh and demonstrated interest from consumers. The first publication
-will follow Phase 3 completion (the authority pipeline and its mart),
-ahead of the link-intelligence work.
+It is a **best-effort, on-demand snapshot, not a maintained service** —
+there is no scheduled refresh. Anyone can reproduce or re-publish it by
+running the pipeline; the tooling to do so lives in `publish/`.
 
 ### Planned: mart samples
 
