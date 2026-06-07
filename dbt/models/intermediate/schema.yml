@@ -17,3 +17,39 @@ models:
         description: All crawls included in this window's computation.
         tests:
           - not_null
+
+  - name: int_pagerank
+    description: "PageRank joined with open_authority/open_volume per domain per crawl, plus authority_ratio. LEFT JOIN from PageRank — the not_null tests on open_authority/open_volume catch Stage 2/3 divergence."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - domain
+              - crawl
+    columns:
+      - name: domain
+        description: Root domain.
+        tests:
+          - not_null
+      - name: crawl
+        description: CC crawl ID.
+        tests:
+          - not_null
+      - name: pagerank_score
+        description: Global PageRank (power iteration over full graph).
+        tests:
+          - not_null
+      - name: open_authority
+        description: Personalized PageRank from composite-DR seed set.
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: open_volume
+        description: Log-scaled in-degree (link quantity signal).
+        tests:
+          - not_null
+      - name: authority_ratio
+        description: "open_authority / open_volume — quality vs quantity. Null when open_volume = 0."
