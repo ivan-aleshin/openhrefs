@@ -26,3 +26,33 @@ models:
         description: Log-scaled in-degree.
         tests:
           - not_null
+
+  - name: stg_cc_domain_pagerank
+    description: "Per-domain PageRank and in/out degree from Stage 2 (SPEC §5)."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - domain
+              - crawl
+    columns:
+      - name: domain
+        description: Root domain.
+        tests:
+          - not_null
+      - name: crawl
+        description: CC crawl ID.
+        tests:
+          - not_null
+      - name: pagerank_score
+        description: "PageRank score from global power-iteration (SPEC §5 Stage 2)."
+        tests:
+          - not_null
+      - name: in_degree
+        description: Number of inbound links.
+        tests:
+          - not_null
+      - name: out_degree
+        description: Number of outbound links.
+        tests:
+          - not_null
