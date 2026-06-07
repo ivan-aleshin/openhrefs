@@ -1,0 +1,58 @@
+version: 2
+
+models:
+  - name: mart_domain_authority
+    description: "One row per domain per crawl scoring window — global PageRank, open_authority, open_volume, authority_ratio (SPEC §6). Computed on the full global graph before scope filtering; the published open-domain-authority-index is a column subset of this mart."
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - domain
+              - window_id
+    columns:
+      - name: domain
+        description: Root domain.
+        tests:
+          - not_null
+      - name: window_id
+        description: Crawl scoring window identifier (typically the most recent crawl ID in the window).
+        tests:
+          - not_null
+      - name: window_end_crawl
+        description: Most recent crawl included in the window.
+        tests:
+          - not_null
+      - name: window_crawls
+        description: All crawls included in this window's computation.
+        tests:
+          - not_null
+      - name: pagerank_score
+        description: Global PageRank (power iteration over the full graph).
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: open_volume
+        description: Log-scaled in-degree (link quantity signal).
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+      - name: open_authority
+        description: Personalized PageRank from the composite-DR seed set.
+        tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: authority_ratio
+        description: "open_authority / open_volume — quality vs quantity. Null when open_volume = 0."
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                row_condition: "authority_ratio is not null"
