@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: int_crawl_window
+    description: "Crawl scoring windows. Phase 3: 1:1 with crawl — each crawl is its own single-crawl window (SPEC §4/§6). Real rolling-window merge is a Spark-stage concern (Phase 5)."
+    columns:
+      - name: window_id
+        description: Crawl scoring window identifier (the window's most recent crawl ID).
+        tests:
+          - not_null
+          - unique
+      - name: window_end_crawl
+        description: Most recent crawl included in the window.
+        tests:
+          - not_null
+      - name: window_crawls
+        description: All crawls included in this window's computation.
+        tests:
+          - not_null
