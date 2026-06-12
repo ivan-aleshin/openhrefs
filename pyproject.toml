@@ -26,13 +26,16 @@ dev = [
     "pre-commit>=3.7",
     "yamllint>=1.35",
     "types-pyyaml>=6.0",
-    "dbt-core>=1.11.11",
     "dbt-duckdb>=1.10.1",
-    "dbt-spark[session]>=1.10.1",
     "sqlfluff-templater-dbt>=4.2.1",
     "scipy>=1.17.1",
     "pandas>=3.0.3",
     "pyarrow>=24.0.0",
+    {include-group = "dbt"},
+]
+dbt = [
+    "dbt-core>=1.11.11",
+    "dbt-spark[session]>=1.10.1",
 ]
 
 [tool.uv]
