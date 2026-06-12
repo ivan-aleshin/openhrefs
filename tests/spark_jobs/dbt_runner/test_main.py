@@ -63,3 +63,31 @@ def test_apply_dbt_env_none_does_not_overwrite():
 def test_require_prod_paths_missing_marts_raises():
     with pytest.raises(SparkJobError, match="MARTS_PATH"):
         main.require_prod_paths({"RAW_PATH": "gs://b/raw"}, "prod")
+
+
+class _FakeResult:
+    def __init__(self, success: bool, exception: object | None = None):
+        self.success = success
+        self.exception = exception
+
+
+class _FakeRunner:
+    def __init__(self, result: _FakeResult):
+        self._result = result
+        self.invoked_with: list[str] | None = None
+
+    def invoke(self, args: list[str]) -> _FakeResult:
+        self.invoked_with = args
+        return self._result
+
+
+def test_invoke_dbt_success_passes_args_through():
+    runner = _FakeRunner(_FakeResult(success=True))
+    main.invoke_dbt(["build", "--target", "prod"], runner=runner)
+    assert runner.invoked_with == ["build", "--target", "prod"]
+
+
+def test_invoke_dbt_failure_raises():
+    runner = _FakeRunner(_FakeResult(success=False, exception=RuntimeError("boom")))
+    with pytest.raises(SparkJobError, match="dbt invocation failed"):
+        main.invoke_dbt(["build"], runner=runner)
