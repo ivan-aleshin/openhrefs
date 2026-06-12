@@ -38,7 +38,7 @@ ENV DBT_PROFILES_DIR=/opt/openhrefs/dbt
 COPY dbt/ /opt/openhrefs/dbt/
 
 # Fail the build if dbt or the spark adapter is not importable in-image.
-RUN python -c "from dbt.cli.main import dbtRunner; import dbt.adapters.spark; print('dbt image deps OK')"
+RUN python -c "import structlog; from dbt.cli.main import dbtRunner; import dbt.adapters.spark; print('dbt image deps OK')"
 
 RUN groupadd -g 1099 spark \
   && useradd -u 1099 -g 1099 -d /home/spark -m spark \

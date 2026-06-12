@@ -36,6 +36,7 @@ dev = [
 dbt = [
     "dbt-core>=1.11.11",
     "dbt-spark[session]>=1.10.1",
+    "structlog>=24.1",
 ]
 
 [tool.uv]
