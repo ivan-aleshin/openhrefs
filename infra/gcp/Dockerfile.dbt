@@ -1,0 +1,48 @@
+# Dedicated Dataproc Serverless image for the dbt prod runner.
+#
+# Bakes the dbt project (models, macros, profiles, seeds) and its pre-resolved
+# dbt_packages, plus dbt-core + dbt-spark[session]. pyspark/py4j are excluded —
+# the Serverless runtime supplies Spark and the dbt-spark `session` adapter binds
+# to it at runtime. dbt_packages are resolved by build_dbt_image.sh on the host
+# (so `docker build` needs neither a live dbt connection nor pyspark).
+#
+# Built and pushed by build_dbt_image.sh; requirements.txt holds only the `dbt`
+# dependency group (pyspark/py4j filtered mechanically).
+FROM debian:12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+       procps tini libjemalloc2 wget ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV CONDA_HOME=/opt/conda
+ENV PATH=${CONDA_HOME}/bin:${PATH}
+ENV PYSPARK_PYTHON=${CONDA_HOME}/bin/python
+RUN wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh \
+       -O /tmp/miniforge.sh \
+  && bash /tmp/miniforge.sh -b -p ${CONDA_HOME} \
+  && rm /tmp/miniforge.sh \
+  && conda install -y python=3.11 \
+  && conda clean -ay
+
+# dbt adapters + core (pyspark/py4j excluded — supplied by the runtime).
+COPY requirements.txt /tmp/requirements.txt
+RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt \
+  && rm /tmp/requirements.txt
+
+# dbt project with pre-resolved dbt_packages (build_dbt_image.sh ran `dbt deps`).
+ENV DBT_PROJECT_DIR=/opt/openhrefs/dbt
+ENV DBT_PROFILES_DIR=/opt/openhrefs/dbt
+COPY dbt/ /opt/openhrefs/dbt/
+
+# Fail the build if dbt or the spark adapter is not importable in-image.
+RUN python -c "import structlog; from dbt.cli.main import dbtRunner; import dbt.adapters.spark; print('dbt image deps OK')"
+
+RUN groupadd -g 1099 spark \
+  && useradd -u 1099 -g 1099 -d /home/spark -m spark \
+  && chown -R spark:spark /opt/openhrefs
+
+# Dataproc controls the workload command — no ENTRYPOINT.
+USER spark

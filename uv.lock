@@ -1230,6 +1230,11 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+dbt = [
+    { name = "dbt-core" },
+    { name = "dbt-spark", extra = ["session"] },
+    { name = "structlog" },
+]
 dev = [
     { name = "chispa" },
     { name = "dbt-core" },
@@ -1245,6 +1250,7 @@ dev = [
     { name = "scipy" },
     { name = "sqlfluff" },
     { name = "sqlfluff-templater-dbt" },
+    { name = "structlog" },
     { name = "types-pyyaml" },
     { name = "yamllint" },
 ]
@@ -1262,6 +1268,11 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+dbt = [
+    { name = "dbt-core", specifier = ">=1.11.11" },
+    { name = "dbt-spark", extras = ["session"], specifier = ">=1.10.1" },
+    { name = "structlog", specifier = ">=24.1" },
+]
 dev = [
     { name = "chispa", specifier = ">=0.10" },
     { name = "dbt-core", specifier = ">=1.11.11" },
@@ -1277,6 +1288,7 @@ dev = [
     { name = "scipy", specifier = ">=1.17.1" },
     { name = "sqlfluff", specifier = ">=3.1" },
     { name = "sqlfluff-templater-dbt", specifier = ">=4.2.1" },
+    { name = "structlog", specifier = ">=24.1" },
     { name = "types-pyyaml", specifier = ">=6.0" },
     { name = "yamllint", specifier = ">=1.35" },
 ]
