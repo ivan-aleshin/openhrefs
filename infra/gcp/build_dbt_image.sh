@@ -30,6 +30,13 @@ DBT_TREE_SHA="$(git rev-parse --short=8 "HEAD:dbt")"
 TAG="${1:-dbt-$(date +%Y%m%d)-${DBT_TREE_SHA}-$(sha256sum uv.lock | cut -c1-8)-$(sha256sum infra/gcp/Dockerfile.dbt | cut -c1-8)}"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT}/${REPO}/openhrefs-dbt:${TAG}"
 
+# The image bakes the committed dbt/ tree (HEAD:dbt). Refuse to build with
+# uncommitted dbt/ changes, which would silently bake stale SQL into a prod image.
+if [ -n "$(git status --porcelain -- dbt)" ]; then
+  echo "ERROR: dbt/ has uncommitted changes — commit them first (the image bakes HEAD:dbt, not the working tree)." >&2
+  exit 1
+fi
+
 CTX="$(mktemp -d)"
 trap 'rm -rf "$CTX"' EXIT
 
@@ -37,16 +44,18 @@ echo "==> Exporting dbt-group requirements (excluding pyspark/py4j)"
 uv export --only-group dbt --no-hashes --no-emit-project \
   | grep -ivE '^(pyspark|py4j)([=<> ]|$)' > "$CTX/requirements.txt"
 
-echo "==> Resolving dbt_packages on the host"
+echo "==> Resolving dbt_packages on the host (clean)"
+rm -rf dbt/dbt_packages
 ( cd dbt && uv run dbt deps --quiet )
+[ -d dbt/dbt_packages ] || { echo "ERROR: dbt deps did not produce dbt/dbt_packages" >&2; exit 1; }
 
-echo "==> Staging dbt project (committed tree + resolved dbt_packages only)"
+echo "==> Staging dbt project (committed tree + freshly-resolved dbt_packages only)"
 mkdir -p "$CTX/dbt"
 # Committed project files only — git archive excludes ALL local cruft by
 # construction: target/, logs/, metastore_db/, spark-warehouse/, derby.log,
 # .user.yml (none are tracked).
 git archive "HEAD:dbt" | tar -x -C "$CTX/dbt"
-# dbt_packages are git-ignored but required at runtime; copy the resolved set.
+# dbt_packages are git-ignored but required at runtime; copy the freshly-resolved set.
 cp -r dbt/dbt_packages "$CTX/dbt/dbt_packages"
 
 cp infra/gcp/Dockerfile.dbt "$CTX/Dockerfile"
