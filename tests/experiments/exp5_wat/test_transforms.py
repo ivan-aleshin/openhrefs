@@ -5,6 +5,7 @@ from pyspark.sql import types as T
 
 from experiments.exp5_wat.transforms import (
     backlink_edges,
+    conditional_recall,
     derive_wat_path,
     expected_edges,
     extract_links,
@@ -243,3 +244,14 @@ def test_backlink_edges_rel_splits_on_any_whitespace(spark: SparkSession) -> Non
     s = spark.createDataFrame([("target.bg",)], _S_SCHEMA)
     row = backlink_edges(links, d_src, s).collect()[0]
     assert (row["is_nofollow"], row["is_ugc"], row["is_sponsored"]) == (True, True, True)
+
+
+def test_conditional_recall_restricts_denominator_to_parsed_sources(spark: SparkSession) -> None:
+    expected = spark.createDataFrame(
+        [("src1.com", "a.bg"), ("src1.com", "b.ro"), ("src2.com", "a.bg")], _EDGE_SCHEMA
+    )
+    found = spark.createDataFrame([("src1.com", "a.bg")], _EDGE_SCHEMA)
+    parsed = spark.createDataFrame([("src1.com",)], _S_SCHEMA)  # src2 NOT parsed
+    result = conditional_recall(found, expected, parsed)
+    # denominator = expected edges with domain_from in {src1.com} = 2; found ∩ = 1
+    assert result == {"expected": 2, "found": 1, "recall": 0.5}

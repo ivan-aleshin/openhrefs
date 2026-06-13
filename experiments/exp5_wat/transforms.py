@@ -215,3 +215,29 @@ def backlink_edges(
         F.array_contains(rel_tokens, "ugc").alias("is_ugc"),
         F.array_contains(rel_tokens, "sponsored").alias("is_sponsored"),
     )
+
+
+def conditional_recall(
+    found_edges: DataFrame, expected_edges_df: DataFrame, parsed_sources: DataFrame
+) -> dict[str, float | int]:
+    """Domain-grain recall, denominator restricted to actually-parsed source domains.
+
+    Valid only when every page of each parsed source was processed (``full`` /
+    ``domain-targeted`` modes). ``parsed_sources`` has a ``registered_domain`` column
+    naming the sources whose WAT files were parsed. Returns ``{expected, found, recall}``.
+
+    Plain joins (no ``F.broadcast(parsed)``): in full mode ``parsed_sources`` is the whole
+    parsed source set (``source_wat_files``), which can be large — broadcasting it could
+    blow up. An operator may broadcast it only for the small domain-targeted set.
+    """
+    parsed = parsed_sources.select(F.col("registered_domain").alias("domain_from")).distinct()
+    expected_restricted = expected_edges_df.join(parsed, on="domain_from", how="inner").select(
+        "domain_from", "domain_to"
+    )
+    found_restricted = found_edges.join(parsed, on="domain_from", how="inner").select(
+        "domain_from", "domain_to"
+    )
+    expected_n = expected_restricted.distinct().count()
+    found_n = expected_restricted.distinct().intersect(found_restricted.distinct()).count()
+    recall = (found_n / expected_n) if expected_n else 0.0
+    return {"expected": expected_n, "found": found_n, "recall": recall}
