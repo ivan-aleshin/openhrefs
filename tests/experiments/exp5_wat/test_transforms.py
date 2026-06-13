@@ -4,6 +4,8 @@ from experiments.exp5_wat.transforms import (
     derive_wat_path,
     extract_links,
     parse_rel_flags,
+    primary_language,
+    registered_domain_of_url,
     with_wat_prefix,
 )
 
@@ -101,3 +103,21 @@ def test_extract_links_tolerates_missing_structure() -> None:
 def test_extract_links_skips_entries_without_url() -> None:
     payload = _wat_payload([{"path": "A@/href", "text": "x"}])
     assert extract_links(payload) == []
+
+
+def test_primary_language_takes_first_element() -> None:
+    assert primary_language("ron,eng,bul") == "ron"
+
+
+def test_primary_language_none_on_empty() -> None:
+    assert primary_language(None) is None
+    assert primary_language("") is None
+
+
+def test_registered_domain_of_url_extracts_pld() -> None:
+    assert registered_domain_of_url("https://www.example.co.uk/path?q=1") == "example.co.uk"
+
+
+def test_registered_domain_of_url_none_on_garbage() -> None:
+    assert registered_domain_of_url("not a url") is None
+    assert registered_domain_of_url(None) is None

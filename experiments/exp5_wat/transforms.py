@@ -7,6 +7,9 @@ attribution, URL→registered-domain, and the DataFrame transforms used by the t
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlsplit
+
+from spark_jobs.common.domains import registered_domain
 
 
 def derive_wat_path(warc_filename: str | None) -> str | None:
@@ -76,3 +79,30 @@ def extract_links(payload: dict[str, Any]) -> list[dict[str, str | None]]:
             continue
         out.append({"url": url, "anchor": link.get("text"), "rel": link.get("rel")})
     return out
+
+
+def primary_language(content_languages: str | None) -> str | None:
+    """Primary language = first element of the comma-separated ``content_languages``.
+
+    Matches Exp 1 / SPEC §5 Stage 1 primary-language attribution. ``None``/empty → ``None``.
+    """
+    if not content_languages:
+        return None
+    first = content_languages.split(",", 1)[0].strip().lower()
+    return first or None
+
+
+def registered_domain_of_url(url: str | None) -> str | None:
+    """Registered domain of a URL's host via the pinned PSL helper.
+
+    Uses ``spark_jobs.common.domains.registered_domain`` (offline ``tldextract``
+    snapshot) so WAT URL parsing uses the pipeline's pinned PSL. Returns ``None`` for
+    unparseable input or hosts the helper rejects (IPs, reserved suffixes, IDNA errors).
+    """
+    if not url:
+        return None
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        return None
+    return registered_domain(host)
