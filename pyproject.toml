@@ -13,6 +13,7 @@ dependencies = [
     "idna>=3.16",
     "duckdb>=1.1",
     "huggingface_hub>=0.25",
+    "warcio>=1.7",
 ]
 
 [dependency-groups]
