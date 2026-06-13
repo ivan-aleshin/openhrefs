@@ -5,13 +5,13 @@ hypothesis on crawl `CC-MAIN-2026-21`: `target domains → inbound source domain
 cc-index segment map` narrows the WAT read while recovering an acceptable share of
 backlink edges. Design: `docs/superpowers/specs/2026-06-13-exp5-wat-extraction-design.md`.
 
-Runtime deps for the final experiment: `warcio` (WAT/WARC record iteration; added now)
-plus `fsspec` + `s3fs` (anonymous streaming of WAT `.gz` from `s3://commoncrawl`; added
-later, in the I/O task). `s3fs`/`fsspec` are needed **only** for Exp 5's WAT `.gz`
-streaming — cc-index Parquet uses the Hadoop S3A connector, and the rest of the pipeline
-does not stream s3 from Python. These are experiment dependencies, **not** a production
-commitment. If WAT parsing later moves into production Stage 4, record them as new runtime
-dependencies in `docs/engineering_notes.md` per the dependency-discipline rule.
+Runtime deps for the experiment: `warcio` (WAT/WARC record iteration), `fsspec`, and
+`s3fs` are added as runtime deps for Exp 5, with `s3fs`/`fsspec` scoped to WAT `.gz`
+streaming from `s3://commoncrawl` (anonymous). cc-index Parquet uses the Hadoop S3A
+connector instead, and the rest of the pipeline does not stream s3 from Python. These are
+experiment dependencies, **not** a production commitment. If WAT parsing later moves into
+production Stage 4, record them as new runtime dependencies in `docs/engineering_notes.md`
+per the dependency-discipline rule.
 
 ## Data slice
 - cc-index columnar, crawl `CC-MAIN-2026-21`, columns `(url_host_registered_domain,
