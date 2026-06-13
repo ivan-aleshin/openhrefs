@@ -151,3 +151,67 @@ def qualify_target_domains(
         )
         .withColumn("meets_share", F.col("language_share") >= F.lit(min_share))
     )
+
+
+def expected_edges(edges: DataFrame, v3_map: DataFrame, target_domains: DataFrame) -> DataFrame:
+    """Webgraph edges into S, resolved to domain strings — recall denominator.
+
+    ``edges`` is the id-based graph ``(from_id, to_id)``; ``v3_map`` is ``(id, domain)``;
+    ``target_domains`` has ``registered_domain`` (S). **Filters in id space first** —
+    resolve S→target ids, keep only edges whose ``to_id`` is a target id — *before*
+    resolving the full 4.3B-edge graph to strings (avoids a double join of the whole
+    graph against the 100M-row map). Only the reduced into-scope edge set is resolved.
+    Output: ``(domain_from, domain_to)``.
+    """
+    s = target_domains.select("registered_domain").distinct()
+    target_ids = (
+        v3_map.join(F.broadcast(s), v3_map["domain"] == s["registered_domain"], "inner")
+        .select(F.col("id").alias("to_id"))
+        .distinct()
+    )
+    into_scope = edges.join(F.broadcast(target_ids), on="to_id", how="inner")
+    dst = v3_map.select(F.col("id").alias("to_id"), F.col("domain").alias("domain_to"))
+    src = v3_map.select(F.col("id").alias("from_id"), F.col("domain").alias("domain_from"))
+    return (
+        into_scope.join(dst, on="to_id", how="inner")
+        .join(src, on="from_id", how="inner")
+        .select("domain_from", "domain_to")
+        .distinct()
+    )
+
+
+def backlink_edges(
+    links: DataFrame, source_domains: DataFrame, target_domains: DataFrame
+) -> DataFrame:
+    """WAT link rows → candidate backlinks into S from D_src sources.
+
+    ``links`` has ``domain_from`` (the source page's registered domain), ``url_from``,
+    ``url_to``, ``anchor``, ``rel``. A WAT file holds many domains, so first restrict to
+    ``domain_from ∈ D_src``; then derive ``domain_to`` from ``url_to`` via the pinned
+    PSL helper and keep links whose ``domain_to ∈ S``. rel → nofollow/ugc/sponsored flags.
+    Output carries ``url_from``/``url_to`` for the backlink sample (design data model).
+    """
+    reg_udf = F.udf(registered_domain_of_url, T.StringType())
+    d_src = source_domains.select(F.col("registered_domain").alias("domain_from")).distinct()
+    s = target_domains.select(F.col("registered_domain").alias("domain_to")).distinct()
+    # Plain shuffle joins by default — S / D_src sizes are unknown until Job 2 runs. An
+    # operator may wrap d_src / s in F.broadcast() once a Job 2 run confirms they are small.
+    kept = (
+        links.join(d_src, on="domain_from", how="inner")
+        .withColumn("domain_to", reg_udf(F.col("url_to")))
+        .join(s, on="domain_to", how="inner")
+    )
+    # Split on ANY run of whitespace (tabs / multiple spaces), matching parse_rel_flags'
+    # Python str.split() — F.split(_, " ") would mis-tokenize "nofollow\tugc".
+    rel_tokens = F.split(F.trim(F.lower(F.coalesce(F.col("rel"), F.lit("")))), r"\s+")
+    return kept.select(
+        "domain_from",
+        "domain_to",
+        "url_from",
+        "url_to",
+        "anchor",
+        "rel",
+        F.array_contains(rel_tokens, "nofollow").alias("is_nofollow"),
+        F.array_contains(rel_tokens, "ugc").alias("is_ugc"),
+        F.array_contains(rel_tokens, "sponsored").alias("is_sponsored"),
+    )

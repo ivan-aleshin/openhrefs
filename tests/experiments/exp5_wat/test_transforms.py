@@ -4,7 +4,9 @@ from pyspark.sql import SparkSession
 from pyspark.sql import types as T
 
 from experiments.exp5_wat.transforms import (
+    backlink_edges,
     derive_wat_path,
+    expected_edges,
     extract_links,
     normalize_content_languages,
     parse_rel_flags,
@@ -23,13 +25,9 @@ _PROJ_SCHEMA = T.StructType(
 
 
 def test_derive_wat_path_substitutes_warc_segment_and_suffix() -> None:
-    warc = (
-        "crawl-data/CC-MAIN-2026-21/segments/1700000000000.0/"
-        "warc/CC-MAIN-20260521-00000.warc.gz"
-    )
+    warc = "crawl-data/CC-MAIN-2026-21/segments/1700000000000.0/warc/CC-MAIN-20260521-00000.warc.gz"
     assert derive_wat_path(warc) == (
-        "crawl-data/CC-MAIN-2026-21/segments/1700000000000.0/"
-        "wat/CC-MAIN-20260521-00000.warc.wat.gz"
+        "crawl-data/CC-MAIN-2026-21/segments/1700000000000.0/wat/CC-MAIN-20260521-00000.warc.wat.gz"
     )
 
 
@@ -85,9 +83,7 @@ def test_parse_rel_flags_sponsored() -> None:
 def _wat_payload(links: list[dict]) -> dict:
     return {
         "Envelope": {
-            "Payload-Metadata": {
-                "HTTP-Response-Metadata": {"HTML-Metadata": {"Links": links}}
-            }
+            "Payload-Metadata": {"HTTP-Response-Metadata": {"HTML-Metadata": {"Links": links}}}
         }
     }
 
@@ -155,7 +151,7 @@ def test_normalize_content_languages_joins_array(spark: SparkSession) -> None:
 
 def test_qualify_target_domains_counts_and_share(spark: SparkSession) -> None:
     rows = [
-        ("a.bg", "bul,eng"),   # a.bg: 2 target of 3 → share 0.666
+        ("a.bg", "bul,eng"),  # a.bg: 2 target of 3 → share 0.666
         ("a.bg", "ron"),
         ("a.bg", "eng"),
         ("b.com", "eng,bul"),  # b.com: primary eng → 0 target of 1 → not a hit
@@ -171,3 +167,79 @@ def test_qualify_target_domains_counts_and_share(spark: SparkSession) -> None:
     assert abs(out["a.bg"]["language_share"] - 2 / 3) < 1e-9
     assert out["a.bg"]["meets_share"] is True
     assert "b.com" not in out
+
+
+_EDGE_SCHEMA = T.StructType(
+    [
+        T.StructField("domain_from", T.StringType()),
+        T.StructField("domain_to", T.StringType()),
+    ]
+)
+_S_SCHEMA = T.StructType([T.StructField("registered_domain", T.StringType())])
+_LINK_SCHEMA = T.StructType(
+    [
+        T.StructField("domain_from", T.StringType()),
+        T.StructField("url_from", T.StringType()),
+        T.StructField("url_to", T.StringType()),
+        T.StructField("anchor", T.StringType()),
+        T.StructField("rel", T.StringType()),
+    ]
+)
+
+
+_V3_EDGE_SCHEMA = T.StructType(
+    [T.StructField("from_id", T.LongType()), T.StructField("to_id", T.LongType())]
+)
+_V3_MAP_SCHEMA = T.StructType(
+    [T.StructField("id", T.LongType()), T.StructField("domain", T.StringType())]
+)
+
+
+def test_expected_edges_filters_in_id_space_then_resolves(spark: SparkSession) -> None:
+    # (1,2) duplicated → must collapse to one (domain_from, domain_to) pair.
+    edges = spark.createDataFrame([(1, 2), (1, 2), (3, 4), (1, 5)], _V3_EDGE_SCHEMA)
+    vmap = spark.createDataFrame(
+        [(1, "src1.com"), (2, "a.bg"), (3, "src2.com"), (4, "out.com"), (5, "b.ro")],
+        _V3_MAP_SCHEMA,
+    )
+    s = spark.createDataFrame([("a.bg",), ("b.ro",)], _S_SCHEMA)
+    rows = expected_edges(edges, vmap, s).collect()
+    assert len(rows) == 2  # deduped, not 3
+    assert {(r["domain_from"], r["domain_to"]) for r in rows} == {
+        ("src1.com", "a.bg"),
+        ("src1.com", "b.ro"),
+    }
+
+
+def test_backlink_edges_filters_source_in_dsrc_and_target_in_S(spark: SparkSession) -> None:
+    # Use target.bg — a.bg is itself a PSL suffix so registered_domain_of_url returns None.
+    links = spark.createDataFrame(
+        [
+            ("src1.com", "https://src1.com/p", "https://target.bg/p", "buy", "nofollow"),  # kept
+            ("other.com", "https://other.com/p", "https://target.bg/p", "x", None),  # not in D_src
+            ("src1.com", "https://src1.com/q", "https://x.net/p", "y", None),  # target not in S
+        ],
+        _LINK_SCHEMA,
+    )
+    d_src = spark.createDataFrame([("src1.com",)], _S_SCHEMA)
+    s = spark.createDataFrame([("target.bg",)], _S_SCHEMA)
+    out = backlink_edges(links, d_src, s).collect()
+    assert len(out) == 1
+    row = out[0]
+    assert (row["domain_from"], row["domain_to"]) == ("src1.com", "target.bg")
+    assert row["url_from"] == "https://src1.com/p"
+    assert row["anchor"] == "buy"
+    assert row["is_nofollow"] is True
+
+
+def test_backlink_edges_rel_splits_on_any_whitespace(spark: SparkSession) -> None:
+    # Use target.bg — a.bg is itself a PSL suffix so registered_domain_of_url returns None.
+    rel = "nofollow\tugc  sponsored"
+    links = spark.createDataFrame(
+        [("src1.com", "https://src1.com/p", "https://target.bg/p", "x", rel)],
+        _LINK_SCHEMA,
+    )
+    d_src = spark.createDataFrame([("src1.com",)], _S_SCHEMA)
+    s = spark.createDataFrame([("target.bg",)], _S_SCHEMA)
+    row = backlink_edges(links, d_src, s).collect()[0]
+    assert (row["is_nofollow"], row["is_ugc"], row["is_sponsored"]) == (True, True, True)
