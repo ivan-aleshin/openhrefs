@@ -1,12 +1,24 @@
 """Unit tests for experiments.exp5_wat.transforms."""
 
+from pyspark.sql import SparkSession
+from pyspark.sql import types as T
+
 from experiments.exp5_wat.transforms import (
     derive_wat_path,
     extract_links,
+    normalize_content_languages,
     parse_rel_flags,
     primary_language,
+    qualify_target_domains,
     registered_domain_of_url,
     with_wat_prefix,
+)
+
+_PROJ_SCHEMA = T.StructType(
+    [
+        T.StructField("registered_domain", T.StringType()),
+        T.StructField("content_languages", T.StringType()),
+    ]
 )
 
 
@@ -121,3 +133,41 @@ def test_registered_domain_of_url_extracts_pld() -> None:
 def test_registered_domain_of_url_none_on_garbage() -> None:
     assert registered_domain_of_url("not a url") is None
     assert registered_domain_of_url(None) is None
+
+
+def test_normalize_content_languages_passes_through_string(spark: SparkSession) -> None:
+    df = spark.createDataFrame([("a.bg", "bul,eng")], _PROJ_SCHEMA)
+    out = normalize_content_languages(df).collect()[0]
+    assert out["content_languages"] == "bul,eng"
+
+
+def test_normalize_content_languages_joins_array(spark: SparkSession) -> None:
+    schema = T.StructType(
+        [
+            T.StructField("registered_domain", T.StringType()),
+            T.StructField("content_languages", T.ArrayType(T.StringType())),
+        ]
+    )
+    df = spark.createDataFrame([("a.bg", ["bul", "eng"])], schema)
+    out = normalize_content_languages(df).collect()[0]
+    assert out["content_languages"] == "bul,eng"
+
+
+def test_qualify_target_domains_counts_and_share(spark: SparkSession) -> None:
+    rows = [
+        ("a.bg", "bul,eng"),   # a.bg: 2 target of 3 → share 0.666
+        ("a.bg", "ron"),
+        ("a.bg", "eng"),
+        ("b.com", "eng,bul"),  # b.com: primary eng → 0 target of 1 → not a hit
+    ]
+    out = {
+        r["registered_domain"]: r
+        for r in qualify_target_domains(
+            spark.createDataFrame(rows, _PROJ_SCHEMA), ["bul", "ron"], 0.25
+        ).collect()
+    }
+    assert out["a.bg"]["total_200_pages"] == 3
+    assert out["a.bg"]["target_language_pages"] == 2
+    assert abs(out["a.bg"]["language_share"] - 2 / 3) < 1e-9
+    assert out["a.bg"]["meets_share"] is True
+    assert "b.com" not in out

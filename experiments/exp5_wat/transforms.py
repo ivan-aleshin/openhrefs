@@ -9,6 +9,10 @@ from __future__ import annotations
 from typing import Any
 from urllib.parse import urlsplit
 
+from pyspark.sql import DataFrame
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
+
 from spark_jobs.common.domains import registered_domain
 
 
@@ -106,3 +110,44 @@ def registered_domain_of_url(url: str | None) -> str | None:
     except ValueError:
         return None
     return registered_domain(host)
+
+
+def normalize_content_languages(df: DataFrame) -> DataFrame:
+    """Return ``df`` with ``content_languages`` guaranteed to be a comma-separated string.
+
+    CC has shipped ``content_languages`` both as ``string`` and as ``array<string>``;
+    isolating the schema-drift handling here (pure DataFrame transform) lets it be tested
+    off-cluster instead of only inside the expensive Job 1.
+    """
+    if dict(df.dtypes)["content_languages"].startswith("array"):
+        return df.withColumn("content_languages", F.concat_ws(",", F.col("content_languages")))
+    return df
+
+
+def qualify_target_domains(
+    projection: DataFrame, targets: list[str], min_share: float
+) -> DataFrame:
+    """Per-URL cc-index projection → target domains S with language counters.
+
+    A page's language is its primary (first ``content_languages`` element). A domain is
+    a **language hit** (returned) when ≥1 page's primary language is in ``targets``.
+    Output columns: ``registered_domain``, ``total_200_pages``, ``target_language_pages``
+    (each page counts once, by its primary), ``language_share``, ``meets_share``
+    (``language_share >= min_share``). The caller treats the language-hit set as S and
+    uses ``meets_share`` for the share-filtered sensitivity subset.
+    """
+    primary_udf = F.udf(primary_language, T.StringType())
+    with_primary = projection.withColumn("primary", primary_udf(F.col("content_languages")))
+    is_target = F.col("primary").isin(targets)
+    agg = with_primary.groupBy("registered_domain").agg(
+        F.count(F.lit(1)).alias("total_200_pages"),
+        F.sum(is_target.cast("long")).alias("target_language_pages"),
+    )
+    return (
+        agg.where(F.col("target_language_pages") > 0)
+        .withColumn(
+            "language_share",
+            F.col("target_language_pages") / F.col("total_200_pages"),
+        )
+        .withColumn("meets_share", F.col("language_share") >= F.lit(min_share))
+    )
