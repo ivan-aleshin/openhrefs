@@ -6,6 +6,8 @@ attribution, URL→registered-domain, and the DataFrame transforms used by the t
 
 from __future__ import annotations
 
+from typing import Any
+
 
 def derive_wat_path(warc_filename: str | None) -> str | None:
     """Map a cc-index ``warc_filename`` to its sibling WAT path.
@@ -49,3 +51,28 @@ def parse_rel_flags(rel: str | None) -> dict[str, bool]:
         "is_ugc": "ugc" in tokens,
         "is_sponsored": "sponsored" in tokens,
     }
+
+
+def extract_links(payload: dict[str, Any]) -> list[dict[str, str | None]]:
+    """Extract hyperlink (``A@/href``) entries from a parsed WAT record payload.
+
+    Navigates the WAT JSON envelope to ``HTML-Metadata.Links`` and keeps only anchor
+    hyperlinks with a ``url``. Returns ``{url, anchor, rel}`` dicts; tolerates any
+    missing level of the structure (non-HTML / non-response records → empty list).
+    """
+    links = (
+        payload.get("Envelope", {})
+        .get("Payload-Metadata", {})
+        .get("HTTP-Response-Metadata", {})
+        .get("HTML-Metadata", {})
+        .get("Links", [])
+    )
+    out: list[dict[str, str | None]] = []
+    for link in links:
+        if link.get("path") != "A@/href":
+            continue
+        url = link.get("url")
+        if not url:
+            continue
+        out.append({"url": url, "anchor": link.get("text"), "rel": link.get("rel")})
+    return out

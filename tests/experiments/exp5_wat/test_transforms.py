@@ -1,6 +1,11 @@
 """Unit tests for experiments.exp5_wat.transforms."""
 
-from experiments.exp5_wat.transforms import derive_wat_path, parse_rel_flags, with_wat_prefix
+from experiments.exp5_wat.transforms import (
+    derive_wat_path,
+    extract_links,
+    parse_rel_flags,
+    with_wat_prefix,
+)
 
 
 def test_derive_wat_path_substitutes_warc_segment_and_suffix() -> None:
@@ -61,3 +66,38 @@ def test_parse_rel_flags_none_all_false() -> None:
 
 def test_parse_rel_flags_sponsored() -> None:
     assert parse_rel_flags("sponsored")["is_sponsored"] is True
+
+
+def _wat_payload(links: list[dict]) -> dict:
+    return {
+        "Envelope": {
+            "Payload-Metadata": {
+                "HTTP-Response-Metadata": {"HTML-Metadata": {"Links": links}}
+            }
+        }
+    }
+
+
+def test_extract_links_keeps_only_anchor_hrefs() -> None:
+    payload = _wat_payload(
+        [
+            {"path": "A@/href", "url": "http://t.example/p", "text": "buy", "rel": "nofollow"},
+            {"path": "IMG@/src", "url": "http://t.example/i.png"},
+            {"path": "A@/href", "url": "http://u.example/", "text": "home"},
+        ]
+    )
+    out = extract_links(payload)
+    assert out == [
+        {"url": "http://t.example/p", "anchor": "buy", "rel": "nofollow"},
+        {"url": "http://u.example/", "anchor": "home", "rel": None},
+    ]
+
+
+def test_extract_links_tolerates_missing_structure() -> None:
+    assert extract_links({}) == []
+    assert extract_links({"Envelope": {}}) == []
+
+
+def test_extract_links_skips_entries_without_url() -> None:
+    payload = _wat_payload([{"path": "A@/href", "text": "x"}])
+    assert extract_links(payload) == []
