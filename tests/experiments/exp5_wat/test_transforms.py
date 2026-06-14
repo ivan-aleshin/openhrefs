@@ -14,6 +14,7 @@ from experiments.exp5_wat.transforms import (
     primary_language,
     qualify_target_domains,
     registered_domain_of_url,
+    source_wat_files,
     with_wat_prefix,
 )
 
@@ -255,3 +256,30 @@ def test_conditional_recall_restricts_denominator_to_parsed_sources(spark: Spark
     result = conditional_recall(found, expected, parsed)
     # denominator = expected edges with domain_from in {src1.com} = 2; found ∩ = 1
     assert result == {"expected": 2, "found": 1, "recall": 0.5}
+
+
+_PROJ_FILE_SCHEMA = T.StructType(
+    [
+        T.StructField("registered_domain", T.StringType()),
+        T.StructField("warc_filename", T.StringType()),
+    ]
+)
+
+
+def test_source_wat_files_maps_source_domain_to_wat_path(spark: SparkSession) -> None:
+    proj = spark.createDataFrame(
+        [
+            ("src1.com", "crawl-data/CC-MAIN-2026-21/segments/1/warc/A.warc.gz"),
+            ("src1.com", "crawl-data/CC-MAIN-2026-21/segments/1/warc/A.warc.gz"),  # dup pair
+            ("src1.com", "crawl-data/CC-MAIN-2026-21/segments/1/warc/B.warc.gz"),  # 2nd file
+            ("other.com", "crawl-data/CC-MAIN-2026-21/segments/1/warc/C.warc.gz"),  # not D_src
+        ],
+        _PROJ_FILE_SCHEMA,
+    )
+    d_src = spark.createDataFrame([("src1.com",)], _S_SCHEMA)
+    out = {(r["registered_domain"], r["wat_path"]) for r in source_wat_files(proj, d_src).collect()}
+    # src1.com mapped to its two files (A, B) as WAT paths; other.com excluded; pair de-duped
+    assert out == {
+        ("src1.com", "crawl-data/CC-MAIN-2026-21/segments/1/wat/A.warc.wat.gz"),
+        ("src1.com", "crawl-data/CC-MAIN-2026-21/segments/1/wat/B.warc.wat.gz"),
+    }

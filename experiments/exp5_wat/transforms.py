@@ -241,3 +241,22 @@ def conditional_recall(
     found_n = expected_restricted.distinct().intersect(found_restricted.distinct()).count()
     recall = (found_n / expected_n) if expected_n else 0.0
     return {"expected": expected_n, "found": found_n, "recall": recall}
+
+
+def source_wat_files(projection: DataFrame, source_domains: DataFrame) -> DataFrame:
+    """Map each source domain to the WAT files holding its pages.
+
+    ``projection`` has ``registered_domain`` + ``warc_filename``. Restrict to
+    ``registered_domain ∈ D_src``, map ``warc_filename`` → WAT path via
+    :func:`derive_wat_path`, drop nulls (malformed paths), de-duplicate
+    ``(registered_domain, wat_path)`` pairs. Output: ``registered_domain``, ``wat_path``.
+    """
+    wat_udf = F.udf(derive_wat_path, T.StringType())
+    d_src = source_domains.select("registered_domain").distinct()
+    return (
+        projection.join(d_src, on="registered_domain", how="inner")
+        .withColumn("wat_path", wat_udf(F.col("warc_filename")))
+        .where(F.col("wat_path").isNotNull())
+        .select("registered_domain", "wat_path")
+        .distinct()
+    )
