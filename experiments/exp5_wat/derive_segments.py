@@ -11,10 +11,14 @@ Submit (reads only gs:// — no s3a props needed; DATAPROC_EXTRA_PKGS still ship
     ./infra/gcp/submit_job.sh \
         experiments/exp5_wat/derive_segments.py \
         --projection-path gs://openhrefs-data/raw/exp5/cdx_projection \
-        --edges-path gs://openhrefs-data/raw/webgraph/cc-main-2026-mar-apr-may-domain/v3_edges \
-        --v3-map-path gs://openhrefs-data/raw/webgraph/cc-main-2026-mar-apr-may-domain/v3_map \
+        --edges-path gs://openhrefs-data/raw/staged/v3_edges \
+        --v3-map-path gs://openhrefs-data/raw/staged/v3_map \
         --output-root gs://openhrefs-data/raw/exp5 \
-        --targets bul,ron --min-share 0.25 --crawl-wat-total 90000 --avg-wat-bytes 1000000000
+        --targets bul,ron --min-share 0.25 --crawl-wat-total 100000 --avg-wat-bytes 160698550
+
+``--crawl-wat-total`` and ``--avg-wat-bytes`` are crawl facts (CC-MAIN-2026-21: 100000 WAT files,
+~160.7 MB each) and are required — there is no safe default, since a wrong total silently corrupts
+crawl_fraction and estimated_bytes.
 """
 
 from __future__ import annotations
@@ -49,8 +53,18 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--output-root", required=True)
     p.add_argument("--targets", default="bul,ron")
     p.add_argument("--min-share", type=float, default=0.25)
-    p.add_argument("--crawl-wat-total", type=int, default=90000)
-    p.add_argument("--avg-wat-bytes", type=int, default=1_000_000_000, help="Est. bytes/WAT file.")
+    p.add_argument(
+        "--crawl-wat-total",
+        type=int,
+        required=True,
+        help="Total WAT files in the crawl (crawl_fraction).",
+    )
+    p.add_argument(
+        "--avg-wat-bytes",
+        type=int,
+        required=True,
+        help="Mean bytes per WAT file (estimated_bytes).",
+    )
     return p.parse_args()
 
 

@@ -183,7 +183,9 @@ lifecycle-deleted, these outputs are not):
   "empty_anchor_rows":37141219,"nofollow_rows":15206915,"ugc_rows":451029,"sponsored_rows":162906,
   "recall":"not computed (file-sample)"}`
 
-Throwaway analysis jobs are kept under `bench/` (re-runnable):
+Diagnostic / provenance jobs are kept under `bench/`. `selectivity_curve.py` and `bench_domain.py`
+re-run from durable outputs under `raw/exp5/`; `profile_v2.py` reads the now-lifecycle-deleted
+`_staging/` WAT and needs a fresh STS re-stage first (see its docstring).
 - `bench/selectivity_curve.py` — the selectivity-curve job (random target samples over `expected_edges`
   + `source_wat_files`); output lines `SELCURVE k_targets=… source_domains=… wat_files=… fraction=…`.
 - `bench/bench_domain.py` — UDF-per-row vs dedup on `runs/throughput-1k-warcio/backlinks_sample`;
