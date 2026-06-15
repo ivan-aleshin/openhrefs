@@ -27,6 +27,10 @@
 #                             CANCELs long iterative jobs — always set this for Stage 2/3.
 #   DATAPROC_MAX_EXECUTORS    spark.dynamicAllocation.maxExecutors (added only if set).
 #   DATAPROC_SHUFFLE_PARTITIONS  spark.sql.shuffle.partitions (added only if set).
+#   DATAPROC_EXTRA_PKGS       space-separated extra paths to zip onto --py-files (e.g.
+#                             experiments/; include experiments/__init__.py for the package).
+#   DATAPROC_EXTRA_PROPERTIES extra --properties, comma-separated no spaces (e.g. s3a config;
+#                             see infra/gcp/submit_s3a.md).
 #
 # Requires: gcloud CLI, gsutil, zip. Run from repo root.
 
@@ -60,6 +64,19 @@ zip -r "$ZIP_JOBS" spark_jobs/ -x "**/__pycache__/*" -x "**/*.pyc" -q
 echo "==> Uploading to ${DEPS_GCS}/"
 gsutil -q cp "$ZIP_JOBS" "${DEPS_GCS}/spark_jobs.zip"
 
+# Optional extra packages for experiment jobs (e.g. experiments/exp5_wat). Space-separated
+# paths; zipped and added to --py-files. experiments/__init__.py must be included so the
+# `experiments` package resolves on executors.
+EXTRA_PY=""
+if [ -n "${DATAPROC_EXTRA_PKGS:-}" ]; then
+  ZIP_EXTRA="/tmp/openhrefs_extra.zip"
+  rm -f "$ZIP_EXTRA"
+  # shellcheck disable=SC2086
+  zip -r "$ZIP_EXTRA" $DATAPROC_EXTRA_PKGS -x "**/__pycache__/*" -x "**/*.pyc" -q
+  gsutil -q cp "$ZIP_EXTRA" "${DEPS_GCS}/extra.zip"
+  EXTRA_PY=",${DEPS_GCS}/extra.zip"
+fi
+
 # Requester-pays stays wired for future direct gs://commoncrawl reads (once billing
 # access is unblocked). Stage 2/3 currently use staged graph inputs, so these properties
 # are harmless there. Iterative-job tuning is appended only when the env var is set, so
@@ -70,6 +87,9 @@ if [ -n "${DATAPROC_MAX_EXECUTORS:-}" ]; then
 fi
 if [ -n "${DATAPROC_SHUFFLE_PARTITIONS:-}" ]; then
   PROPS="${PROPS},spark.sql.shuffle.partitions=${DATAPROC_SHUFFLE_PARTITIONS}"
+fi
+if [ -n "${DATAPROC_EXTRA_PROPERTIES:-}" ]; then
+  PROPS="${PROPS},${DATAPROC_EXTRA_PROPERTIES}"
 fi
 
 echo "==> Submitting ${SCRIPT} to Dataproc Serverless"
@@ -84,7 +104,7 @@ gcloud dataproc batches submit pyspark "$SCRIPT" \
   --service-account="$SA" \
   --container-image="$IMAGE" \
   --deps-bucket="${DEPS_GCS%/*}" \
-  --py-files="${DEPS_GCS}/spark_jobs.zip" \
+  --py-files="${DEPS_GCS}/spark_jobs.zip${EXTRA_PY}" \
   --files="config.yml,config/storage.yml" \
   --properties="$PROPS" \
   -- "$@"
