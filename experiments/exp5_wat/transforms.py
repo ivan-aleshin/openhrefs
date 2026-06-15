@@ -38,8 +38,8 @@ def with_wat_prefix(path: str, prefix: str) -> str:
     sample/artifact lists may already carry a scheme. Any path containing ``"://"`` is
     treated as absolute and returned unchanged; otherwise ``prefix`` and ``path`` are joined
     with exactly one slash (so a ``--wat-prefix`` without a trailing slash still works).
-    WAT reading supports ``local`` / ``s3://`` / ``s3a://`` (via s3fs); ``gs://`` for WAT is
-    NOT supported (Exp 5 adds no gcsfs).
+    WAT reading dispatches by scheme via fsspec: ``s3://``/``s3a://`` (s3fs, anonymous) for
+    public CommonCrawl, ``gs://`` (gcsfs) for staged copies, and ``local`` paths.
     """
     if "://" in path:
         return path

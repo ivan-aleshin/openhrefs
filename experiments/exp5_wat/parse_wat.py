@@ -7,7 +7,7 @@ backlinks sample + a metrics summary.
 
 Recall is computed only when --parsed-sources-path is given (full / domain-targeted
 modes, where every page of each counted source was parsed). For file-sample mode, omit
-it: recall is not valid (page-coverage lower bound only) — see the design §4.
+it: recall is not valid (page-coverage lower bound only).
 
 IMPORTANT: --parsed-sources-path must name **only sources whose WAT files were actually
 parsed**, NOT expected_edges. expected_edges carries all graph D_src, including sources
@@ -35,13 +35,14 @@ from __future__ import annotations
 
 import argparse
 import re
+from collections.abc import Iterator
 
 import structlog
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
-from experiments.exp5_wat.io import iter_wat_links, write_json, write_parquet
+from experiments.exp5_wat.io import iter_wat_links, iter_wat_links_fast, write_json, write_parquet
 from experiments.exp5_wat.transforms import (
     backlink_edges,
     conditional_recall,
@@ -61,6 +62,21 @@ _LINK_SCHEMA = T.StructType(
 )
 
 
+def _open_wat(wat_path: str, prefix: str, parser: str) -> Iterator[dict[str, str | None]]:
+    """Iterate one WAT file, choosing the fsspec backend/creds by URI scheme + the parser.
+
+    Public ``s3://commoncrawl`` is read anonymously (``anon=True``); our own staged
+    ``gs://`` copy is read with default credentials (ADC). ``parser`` selects the hot loop:
+    ``warcio`` (warcio+json) or ``fastwarc`` (fastwarc+orjson). This is the only
+    cloud-specific seam — the transforms stay neutral. Runs on executors, so it is a
+    module-level fn (picklable), not a closure.
+    """
+    full = with_wat_prefix(wat_path, prefix)
+    opts: dict[str, object] = {} if full.startswith("gs://") else {"anon": True}
+    fn = iter_wat_links_fast if parser == "fastwarc" else iter_wat_links
+    return fn(full, **opts)
+
+
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Exp 5 WAT parse + metrics")
     p.add_argument("--wat-list-path", required=True)
@@ -76,6 +92,12 @@ def _parse_args() -> argparse.Namespace:
         "--wat-prefix",
         default="s3://commoncrawl/",
         help="Prepended to each relative wat_path (cc-index warc_filename is relative).",
+    )
+    p.add_argument(
+        "--parser",
+        choices=["warcio", "fastwarc"],
+        default="warcio",
+        help="WAT record parser: warcio+json (default) or fastwarc+orjson (faster).",
     )
     p.add_argument("--output-root", required=True)
     p.add_argument(
@@ -116,11 +138,12 @@ def main() -> None:
 
     # Distribute WAT iteration: one task per file, flatMap to link rows. Return the
     # iterator directly (do NOT materialize a list — one WAT file's links can be large).
-    # cc-index warc_filename (hence wat_path) is relative; prepend the CommonCrawl prefix
+    # cc-index warc_filename (hence wat_path) is relative; prepend the prefix
     # (with_wat_prefix leaves already-absolute paths untouched).
     wat_prefix = args.wat_prefix
+    parser = args.parser
     link_rows = spark.sparkContext.parallelize(wat_paths, max(len(wat_paths), 1)).flatMap(
-        lambda path: iter_wat_links(with_wat_prefix(path, wat_prefix), anon=True)
+        lambda path: _open_wat(path, wat_prefix, parser)
     )
     # Tuples + explicit schema: toDF() schema inference fails on an empty RDD, which is a
     # real case for tiny/domain-targeted samples.
@@ -157,6 +180,7 @@ def main() -> None:
         F.coalesce(F.sum(F.col("is_sponsored").cast("long")), F.lit(0)).alias("sponsored_rows"),
     ).collect()[0]
     metrics: dict[str, object] = {
+        "parser": args.parser,
         "wat_files_parsed": len(wat_paths),
         "backlink_rows": agg["backlink_rows"],
         "found_edges": found_edges.count(),
