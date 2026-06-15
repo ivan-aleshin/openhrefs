@@ -13,6 +13,10 @@ into ``os.environ`` here before dbt runs.
 
 Vendor-neutral: no cloud SDK imports — GCP specifics live in ``infra/gcp/``.
 
+Cost (last measured): ``dbt build --target prod`` against ``gs://openhrefs-data``
+on crawl window ``cc-main-2026-mar-apr-may`` — PASS=41, mart 3.25 GiB / 118.76M
+domains, ~13m38s, ~$0.40 (6.43 DCU-hr). Drift triggers an engineering note entry.
+
 Submit (prod) — full build:
     DATAPROC_IMAGE=<dbt-image-tag> ./infra/gcp/submit_job.sh \
         spark_jobs/dbt_runner/main.py \
