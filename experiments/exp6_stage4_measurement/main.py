@@ -79,9 +79,9 @@ def main() -> None:
     records_with_no_links = sc.accumulator(0)
 
     def extract(path: str):
-        # Accumulators give experiment-grade parse/error rates. They can over-count on
-        # Spark task retries/speculation; acceptable for a measurement run, noted in the
-        # write-up. Caching `resolved` keeps the flatMap to a single execution.
+        # Accumulators give experiment-grade parse/error rates. Caching `links` below keeps the
+        # WAT-parse flatMap to a single pass, so these are exact except for rare Spark task
+        # retries/speculation (acceptable for a measurement run, noted in the write-up).
         files_attempted.add(1)
         try:
             yield from iter_wat_links_raw(
@@ -94,12 +94,17 @@ def main() -> None:
             files_unreadable.add(1)
 
     paths_rdd = sc.parallelize(full_paths, len(full_paths))
-    links = spark.createDataFrame(paths_rdd.flatMap(extract), schema=_LINK_SCHEMA)
+    # Cache the WAT-parse output: resolve_domains' distinct+join each re-scan their input, so
+    # without this the flatMap (the dominant cost) re-runs ~3x. One materialize pass also makes
+    # the accumulators exact (bar rare task retries).
+    links = spark.createDataFrame(paths_rdd.flatMap(extract), schema=_LINK_SCHEMA).cache()
+    links.count()
 
     resolved = resolve_domains(
         resolve_domains(links, "url_from", "domain_from"), "url_to", "domain_to"
-    )
-    resolved = resolved.cache()
+    ).cache()
+    raw_link_rows = resolved.count()  # materialize from cached links, then release WAT-parse cache
+    links.unpersist()
 
     pairs = aggregate_domain_pairs(
         resolved.select("domain_from", "domain_to", "rel").where(
@@ -112,7 +117,7 @@ def main() -> None:
 
     metrics = {
         "n_wat_files": len(full_paths),
-        "raw_link_rows": resolved.count(),  # triggers the flatMap -> populates accumulators
+        "raw_link_rows": raw_link_rows,  # captured above (single cached materialize)
         "global_domain_pairs": pairs.count(),
         "distinct_url_from_hosts": resolved.select(F.expr("parse_url(url_from, 'HOST')"))
         .distinct()
@@ -129,7 +134,7 @@ def main() -> None:
         **null_domain_rates(resolved),
         **scoped_counts(pairs, scope),
         **top_domain_skew(pairs, n=20),
-        # read AFTER the actions above so the flatMap has executed:
+        # accumulators: read after links was materialized above (single WAT-parse pass):
         "files_attempted": files_attempted.value,
         "files_unreadable": files_unreadable.value,
         "records_seen": records_seen.value,

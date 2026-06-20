@@ -40,10 +40,10 @@ Full `metrics` JSON keys emitted per run (`main.py`): `n_wat_files`, `raw_link_r
 `records_with_no_links`. Output file count / avg size / partition skew + compressed bytes are
 read from `gsutil ls -l` on the written Parquet (operator).
 
-Accumulator caveat: `files_attempted` / `files_unreadable` / `records_seen` /
-`malformed_records` / `records_with_no_links` over-count by the number of times Spark scans the
-link DataFrame (host-dedup resolution does a distinct + join, and task retries/speculation add
-more), so read them as upper bounds / relative rates, not exact counts.
+Accumulator note: `files_attempted` / `files_unreadable` / `records_seen` /
+`malformed_records` / `records_with_no_links` are populated by a single cached WAT-parse pass
+(`links` is cached before the host-dedup resolution), so they are exact except for rare Spark
+task retries / speculation, which can still slightly over-count.
 
 3000 is mandatory to pass the full-pass gate (two points fit a line trivially). The ladder is
 nested (200 ⊂ 1000 ⊂ 3000), so staging `manifest_3000.csv` once covers all three runs.
