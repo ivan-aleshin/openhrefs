@@ -79,3 +79,113 @@ def resolve_domains(df: DataFrame, url_col: str, out_col: str) -> DataFrame:
         with_host.select("_host").distinct().withColumn(out_col, reg_udf(F.col("_host")))
     )
     return with_host.join(resolved_hosts, on="_host", how="left").drop("_host")
+
+
+def aggregate_domain_pairs(df: DataFrame) -> DataFrame:
+    """Aggregate ``(domain_from, domain_to, rel)`` rows to the global domain-grain.
+
+    Output: ``(domain_from, domain_to, link_count, dofollow_count, ugc_count,
+    sponsored_count)``. ``dofollow = NOT nofollow`` (public contract uses
+    ``is_dofollow``). rel is split on any whitespace run to match Exp 5's
+    ``parse_rel_flags`` tokenization.
+    """
+    rel_tokens = F.split(F.trim(F.lower(F.coalesce(F.col("rel"), F.lit("")))), r"\s+")
+    flagged = (
+        df.withColumn("is_nofollow", F.array_contains(rel_tokens, "nofollow"))
+        .withColumn("is_ugc", F.array_contains(rel_tokens, "ugc"))
+        .withColumn("is_sponsored", F.array_contains(rel_tokens, "sponsored"))
+    )
+    return flagged.groupBy("domain_from", "domain_to").agg(
+        F.count(F.lit(1)).alias("link_count"),
+        F.sum((~F.col("is_nofollow")).cast("long")).alias("dofollow_count"),
+        F.sum(F.col("is_ugc").cast("long")).alias("ugc_count"),
+        F.sum(F.col("is_sponsored").cast("long")).alias("sponsored_count"),
+    )
+
+
+def scoped_counts(pairs: DataFrame, scope_domains: DataFrame) -> dict[str, int]:
+    """Global vs scoped pair/link counts for the global-vs-scoped ratio.
+
+    ``scope_domains`` has a ``registered_domain`` column (the target set S). Returns
+    a small dict (two aggregate rows collected — cheap, not a large dataset).
+    """
+    s = scope_domains.select(F.col("registered_domain").alias("domain_to")).distinct()
+    g = pairs.agg(
+        F.count(F.lit(1)).alias("global_pairs"),
+        F.sum("link_count").alias("global_links"),
+    ).first()
+    scoped = (
+        pairs.join(F.broadcast(s), on="domain_to", how="inner")
+        .agg(
+            F.count(F.lit(1)).alias("scoped_pairs"),
+            F.sum("link_count").alias("scoped_links"),
+        )
+        .first()
+    )
+    return {
+        "global_pairs": int(g["global_pairs"]),
+        "global_links": int(g["global_links"] or 0),
+        "scoped_pairs": int(scoped["scoped_pairs"]),
+        "scoped_links": int(scoped["scoped_links"] or 0),
+    }
+
+
+def null_domain_rates(links: DataFrame) -> dict[str, int]:
+    """Null-domain quality counters on resolved link rows."""
+    row = links.agg(
+        F.count(F.lit(1)).alias("total_rows"),
+        F.sum(F.col("domain_from").isNull().cast("long")).alias("domain_from_null"),
+        F.sum(F.col("domain_to").isNull().cast("long")).alias("domain_to_null"),
+    ).first()
+    return {
+        "total_rows": int(row["total_rows"]),
+        "domain_from_null": int(row["domain_from_null"] or 0),
+        "domain_to_null": int(row["domain_to_null"] or 0),
+    }
+
+
+def top_domain_skew(pairs: DataFrame, n: int) -> dict[str, list[dict[str, Any]]]:
+    """Top-``n`` skew by link_count for domain_from, domain_to, and domain_pair."""
+    by_from = (
+        pairs.groupBy("domain_from")
+        .agg(F.sum("link_count").alias("link_count"))
+        .orderBy(F.desc("link_count"))
+        .limit(n)
+    )
+    by_to = (
+        pairs.groupBy("domain_to")
+        .agg(F.sum("link_count").alias("link_count"))
+        .orderBy(F.desc("link_count"))
+        .limit(n)
+    )
+    by_pair = pairs.orderBy(F.desc("link_count")).limit(n)
+    return {
+        "top_domain_from": [r.asDict() for r in by_from.collect()],
+        "top_domain_to": [r.asDict() for r in by_to.collect()],
+        "top_domain_pair": [r.asDict() for r in by_pair.collect()],
+    }
+
+
+def host_parse_fail_rates(links: DataFrame) -> dict[str, int]:
+    """Host-parse failures BEFORE PSL: a non-null URL whose ``parse_url(HOST)`` is null.
+
+    Separates "URL unparseable" (counted here) from "host parsed but PSL rejected it" (which
+    surfaces as a domain null in :func:`null_domain_rates` after registered-domain resolution).
+    A ``None`` URL is not a failure and is not counted.
+    """
+    row = links.agg(
+        F.sum(
+            (F.expr("parse_url(url_from, 'HOST')").isNull() & F.col("url_from").isNotNull()).cast(
+                "long"
+            )
+        ).alias("url_from_parse_fail"),
+        F.sum(
+            (F.expr("parse_url(url_to, 'HOST')").isNull() & F.col("url_to").isNotNull()).cast(
+                "long"
+            )
+        ).alias("url_to_parse_fail"),
+    ).first()
+    return {
+        "url_from_parse_fail": int(row["url_from_parse_fail"] or 0),
+        "url_to_parse_fail": int(row["url_to_parse_fail"] or 0),
+    }
