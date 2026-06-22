@@ -25,11 +25,15 @@ The Dataproc submit path ships the package via `DATAPROC_EXTRA_PKGS=experiments/
 - STS->GCS arm measured; AWS in-region modeled from price lists (run only if non-obvious).
 
 ## Slice ladder results
-| size | wall-clock | compute $ | transfer/stage $ | input GiB | raw rows | global pairs | scoped_pairs / scoped_links (bul/ron) | distinct url_from hosts | distinct url_to hosts | domain-grain bytes | url-sample bytes/row | parse/null errors |
+| size | wall-clock | compute (DCU-h / $) | transfer/stage | input GiB | raw rows | global pairs | scoped pairs / links (bul/ron) | distinct url_from hosts | distinct url_to hosts | domain-grain GiB | url-sample GiB | parse/null errors |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 200 | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] | [ ] |
-| 1000 | [ ] | ... | | | | | | | | | | |
-| 3000 | [ ] | ... | | | | | | | | | | |
+| 200 | 29 min | 13.83 / ~$0.8–1.0 | (shared STS) | ~31 | 0.61B | 22,371,464 | 67,761 / 4.32M | 2,301,015 | 7,242,043 | 0.51 | 0.07 | url_to fail ~42%, ~69% records no-links |
+| 1000 | 3h04m | 95.66 / ~$5.7–7.2 | (shared STS) | ~157 | 3.04B | 74,664,394 | 171,035 / 21.5M | 6,637,436 | 16,994,720 | 1.74 | 0.30 | url_to fail ~42%, ~69% no-links |
+| 3000 | 9h18m | 293.97 / ~$17.6–22.0 | STS S3→GCS ~470 GiB, server-side, ~negligible (STANDARD ≤48h) | ~470 | 9.10B | 153,449,373 | 277,202 / 64.3M | 11,742,838 | 28,574,562 | 3.50 | 0.81 | url_to fail ~42%, ~69% no-links |
+
+The ladder is nested, so a single 3000 STS stage (~470 GiB) covers all three runs; transfer
+cost is server-side S3→GCS and effectively negligible. Ladder compute total ≈ 403 DCU-h
+(≈ $24–30). All three runs SUCCEEDED; `files_unreadable = 0`, `malformed_records = 0`.
 
 Full `metrics` JSON keys emitted per run (`main.py`): `n_wat_files`, `raw_link_rows`,
 `global_domain_pairs`, `distinct_url_from_hosts`, `distinct_url_to_hosts`,
@@ -49,15 +53,34 @@ task retries / speculation, which can still slightly over-count.
 nested (200 ⊂ 1000 ⊂ 3000), so staging `manifest_3000.csv` once covers all three runs.
 
 ## Fit + extrapolation
-- slope / r2 / ci95 per `run_ladder.py fit`: [ ]
-- full-crawl (~100k files) extrapolation: domain-grain size [ ], compute $ [ ], staged input [ ].
-- gate decision: [ pass -> S4-0b full pass on <cloud> | fail -> extrapolation-only, full measurement deferred ].
+- Cost is **linear** in WAT-file count: slope **0.0999 DCU-h/file**, intercept −5.34,
+  **r² = 0.99995**; wall-clock ~0.187 min/file. (The early 200→1000 jump looked superlinear
+  but was a two-point artifact of fixed small-slice overhead — the third point resolves it.)
+- Full-crawl (100k files) extrapolation: domain-grain ~103 GiB; compute ~9,982 DCU-h
+  (~$600–750) with the diagnostic harness, ~7,500 DCU-h (~$450–565) for a thin
+  production-like path; staged input ~15.7 TB.
+- Wall-clock at the current 32-vCPU quota (~8 executors) extrapolates to ~312 h (~13 days)
+  as a single batch — quota-independent in cost but infeasible to run as one job; needs a
+  quota raise, crawl chunking, or AWS in-region.
+- gate decision: **PASS** (≥3 points, r² ≥ 0.95) → S4-0b go/no-go unlocked; if run, use thin
+  mode and an operator-decided cloud path.
 
 ## Decisions / follow-up
-- Cloud: [ measured | modeled ] -> [ AWS in-region | STS->GCS ].
-- Global-vs-scoped: [ ].
+- Cloud: STS→GCS arm **measured**; AWS in-region modeled. Path for the full pass deferred
+  to the operator on credit balance — GCP (raise CPUS_ALL_REGIONS + Dataproc on staged WAT)
+  vs AWS in-region (no per-region vCPU quota, direct s3://commoncrawl).
+- Global-vs-scoped: the WAT **read + parse** is global regardless (scope = 0.18% of pairs
+  but zero source-side selectivity, so the full WAT pass is mandatory either way). A
+  scoped-only pipeline could trim some post-parse aggregation/output, but the full pass
+  writes **global** domain-grain on product/contract grounds — the global backlink index is
+  the deliverable; scope narrows downstream stages only.
 - Required before S4-1: update `SPEC.md` Stage 4 assumptions and `config/storage.yml`
   input semantics if the measurement invalidates the current contract.
 
 ## Actual cost
-- STS/Dataproc: [ ]  (+ AWS/EMR if run: [ ]).
+- Dataproc ladder (200 + 1000 + 3000): **403.46 DCU-h ≈ $24–30** (13.83 + 95.66 + 293.97).
+- STS staging: one S3→GCS transfer of the nested 3000 set, **~470 GiB**, server-side,
+  effectively negligible (STANDARD, ≤48h lifecycle).
+- AWS/EMR arm: **not run — modeled only** (in-region s3://commoncrawl, $0 egress).
+- Full single-crawl pass (S4-0b): not yet run; extrapolated ~$450–565 (thin) — see
+  Fit + extrapolation.
