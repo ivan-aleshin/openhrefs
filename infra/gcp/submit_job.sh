@@ -31,6 +31,8 @@
 #                             experiments/; include experiments/__init__.py for the package).
 #   DATAPROC_EXTRA_PROPERTIES extra --properties, comma-separated no spaces (e.g. s3a config;
 #                             see infra/gcp/submit_s3a.md).
+#   DATAPROC_BATCH_ID         human-readable batch id (added only if set; else auto-UUID). Must be
+#                             [a-z0-9-], 4-63 chars, start lowercase, no trailing hyphen.
 #
 # Requires: gcloud CLI, gsutil, zip. Run from repo root.
 
@@ -99,6 +101,7 @@ echo "    image=${IMAGE}"
 gcloud dataproc batches submit pyspark "$SCRIPT" \
   --project="$PROJECT" \
   --region="$REGION" \
+  ${DATAPROC_BATCH_ID:+--batch="$DATAPROC_BATCH_ID"} \
   --version="$RUNTIME_VERSION" \
   --ttl="$TTL" \
   --service-account="$SA" \
