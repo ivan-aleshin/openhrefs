@@ -41,8 +41,9 @@ RUN python -m pip install --no-cache-dir -r /tmp/requirements.txt \
 RUN groupadd -g 1099 spark \
   && useradd -u 1099 -g 1099 -d /home/spark -m spark
 
-# Fail the build if a native extension (pydantic_core) is broken in-image.
-RUN python -c "import pydantic_core, pydantic, structlog, yaml; print('image deps OK')"
+# Fail the build if a native extension is broken in-image. fastwarc/orjson/tldextract
+# are Stage 4 native deps — import them so a broken wheel fails the build, not the executor.
+RUN python -c "import pydantic_core, pydantic, structlog, yaml, fastwarc.warc, orjson, tldextract; print('image deps OK')"
 
 # tini is installed per the Serverless contract, but Dataproc controls the
 # workload command — the image must not set its own ENTRYPOINT.
