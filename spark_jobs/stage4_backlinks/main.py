@@ -65,6 +65,7 @@ def _run(spark: SparkSession, args: argparse.Namespace) -> None:
     log.info("stage4_start", run_id=args.run_id, shuffle_partitions=args.shuffle_partitions)
     paths, sha = _read_wat_list(args)
     accs = _make_accumulators(spark)
+    # links feeds both count() and resolve_domain_pairs; cache avoids a 2nd WAT parse (Exp 6).
     links = _extract_rdd(spark, paths, accs).cache()
     raw_link_rows = links.count()  # single parse pass; populates accumulators
     stats = _harvest_stats(sha, paths, raw_link_rows, accs)
@@ -119,7 +120,12 @@ def _read_wat_list(args: argparse.Namespace) -> tuple[list[str], str]:
 
 
 def _make_accumulators(spark: SparkSession) -> dict[str, Any]:
-    """Create the 5 named Spark accumulators for the extraction pass."""
+    """Create the 5 named Spark accumulators for the extraction pass.
+
+    Contract: read ``.value`` exactly once, right after the first action over the
+    (cached) ``links`` DataFrame — a second uncached pass would re-run the flatMap
+    and inflate the counters.
+    """
     sc = spark.sparkContext
     return {
         "files_attempted": sc.accumulator(0),
