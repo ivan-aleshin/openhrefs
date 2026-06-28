@@ -4,9 +4,11 @@
 # and marts_path — the pipeline's two canonical output locations.
 #
 # Canonical storage is Parquet at every layer (SPEC.md §9). CommonCrawl source
-# paths point at the public mirrors; the GCP reference deployment uses the GCS
-# mirror to avoid cross-cloud egress. Spark's Hadoop FS layer handles the
-# protocol, so business logic stays vendor-neutral.
+# paths point at the public mirrors; the GCP deployment prefers the GCS mirror
+# for the host graph and index to avoid cross-cloud egress. Spark's Hadoop FS
+# layer handles the protocol, so business logic stays vendor-neutral. Stage 4 is
+# the exception: its WAT prefix is always supplied explicitly to the job (see the
+# gcp.wat_path note), never read implicitly from this file.
 
 # Local development and CI. Defaults read fixtures and write under build/, so
 # `make check` and dbt --target local work with no cloud credentials.
@@ -23,6 +25,8 @@ gcp:
   marts_path: gs://openhrefs-data/marts
   host_graph_path: gs://commoncrawl/projects/hyperlinkgraph
   cdx_path: gs://commoncrawl/cc-index/collections
+  # Stage 4 requires an explicit --wat-prefix; this documents the canonical WAT
+  # location but is not an implicit fallback for the job.
   wat_path: gs://commoncrawl/crawl-data
 
 # AWS drop-in (EMR/Glue + S3).
